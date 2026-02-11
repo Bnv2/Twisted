@@ -1,0 +1,27 @@
+# --- 🔐 SECRETS & CREDENTIALS ---
+# This is the most important line. Never upload your keys!
+.streamlit/secrets.toml
+credentials.json
+*.json
+
+# --- 🐍 PYTHON JUNK ---
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+venv/
+env/
+.venv/
+.pytest_cache/
+
+# --- 🖥️ SYSTEM FILES ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# --- 📊 DATA & LOGS ---
+*.log
+# If you have local sqlite databases or CSVs you don't want public:
+# *.db
+# *.csv
