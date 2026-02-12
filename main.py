@@ -31,7 +31,7 @@ PAGE_PERMISSIONS = {
     "📦 Inventory":      ["Admin", "Logistics", "Manager"],
     "📂 Workspace":      ["Admin", "Staff", "Manager", "Logistics"],
     "📜 History":        ["Admin"],
-    "🗂️ All Events Archive": ["Admin"],
+    "🗂️ All Events Archive": ["Admin", "Staff"],
 }
 
 # --- SESSION STATE INITIALIZATION ---
