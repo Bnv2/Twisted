@@ -19,8 +19,8 @@ def show_create_event(get_data, conn):
         # Row 1: Venue, Type, Stall
         col_v1, col_v2, col_v3 = st.columns([2, 1, 1])
         venue = col_v1.text_input("Venue Name*", placeholder="Bondi Market", key=f"v_{k}")
-        event_type = col_v2.selectbox("Event Type*", ["Market", "Festival", "School", "Ethnic", "Party", "Corporate", "Other"], key=f"etype_{k}")
-        setup_type = col_v3.selectbox("Stall Type*", ["Truck", "Marquee", "Trailer", "Stall", "Other"], key=f"setup_{k}")
+        event_type = col_v2.selectbox("Event Type*", ["Event", "Market", "Festival", "School", "Ethnic", "Party", "Corporate", "Other"], key=f"etype_{k}")
+        setup_type = col_v3.selectbox("Stall Type*", ["Truck", "Marquee", "Ice cream van", "Marquee 2", "Other"], key=f"setup_{k}")
         
         # Row 2: Date logic (Clean side-by-side layout)
         d_col1, d_col2, d_col3 = st.columns([1.5, 1, 1.5])
@@ -31,7 +31,6 @@ def show_create_event(get_data, conn):
         if is_multi_day:
             end_date = d_col3.date_input("End Date*", event_date + timedelta(days=1), key=f"ed_{k}")
         else:
-            # Displays a disabled placeholder so the UI doesn't "jump" when toggled
             d_col3.text_input("End Date", value=str(event_date), disabled=True, key=f"ed_dis_{k}")
 
     # --- 💰 SECTION 2: FINANCIALS ---
