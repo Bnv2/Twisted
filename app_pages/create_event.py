@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import re
 
 def show_create_event(get_data, conn):
-    if st.session_state.user_role != "Admin" and st.session_state.user_role != "manager":
+    if st.session_state.user_role != "Admin" and st.session_state.user_role != "Manager":
         st.error("Access Denied.")
         st.session_state.page = "🏠 Home Dashboard"
         st.rerun()
