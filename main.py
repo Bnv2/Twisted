@@ -128,7 +128,7 @@ else:
             st.rerun()
         # new code =========================
         if st.session_state.user_role == "Manager":
-        col1, col2 = st.sidebar.columns(2)
+            col1, col2 = st.sidebar.columns(2)
         
         # Red Button (Primary)
         if col1.button("➕ Event", use_container_width=True, type="primary", help="Create New Event"):
