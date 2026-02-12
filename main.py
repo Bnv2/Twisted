@@ -126,6 +126,16 @@ else:
             # Note: You'll need to create app_pages/create_staff.py later
             st.session_state.page = "➕ Create Staff" 
             st.rerun()
+        # new code =========================
+        if st.session_state.user_role == "Manager":
+        col1, col2 = st.sidebar.columns(2)
+        
+        # Red Button (Primary)
+        if col1.button("➕ Event", use_container_width=True, type="primary", help="Create New Event"):
+            st.session_state.page = "➕ Create Event"
+            st.rerun()
+
+    # new code end =======================
             
     st.sidebar.divider()
 
