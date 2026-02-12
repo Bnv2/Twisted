@@ -211,23 +211,103 @@ def show_event_workspace(eid, get_data, conn):
                 st.success("Logistics Updated!")
                 st.rerun()
 
+    # # ==========================================
+    # # 📝 TAB 3: DAILY REPORT (Matches Schema)
+    # # ==========================================
     # ==========================================
     # 📝 TAB 3: DAILY REPORT (Matches Schema)
     # ==========================================
+    with tab_rep:
+        rep_date_str = selected_report_date.strftime('%d/%m/%Y')
+        st.subheader(f"📝 Report: {selected_report_date.strftime('%A, %d %b')}")
+        
+        df_rep = get_data("Event_Reports")
+        
+        # --- CRITICAL: Normalize Column Names ---
+        df_rep.columns = [str(c).strip() for c in df_rep.columns]
+        
+        # Filter for the specific event and date
+        day_match = df_rep[(df_rep['Event_ID'] == eid) & (df_rep['Report_Date'] == rep_date_str)]
+        curr_rep = day_match.iloc[0] if not day_match.empty else {}
+
+        # --- DATA CLEANING (The Full Stack Habit) ---
+        raw_stalls = curr_rep.get("Other_Stalls", 0)
+        try:
+            clean_stalls = int(float(raw_stalls)) if pd.notna(raw_stalls) and str(raw_stalls).strip() != "" else 0
+        except:
+            clean_stalls = 0
+
+        # --- WEATHER SAFETY ---
+        weather_options = ["Sunny", "Cloudy", "Rainy", "Windy", "Heat"]
+        saved_weather = curr_rep.get("Weather", "Sunny")
+        w_index = weather_options.index(saved_weather) if saved_weather in weather_options else 0
+
+        with st.form("daily_rep"):
+            c1, c2 = st.columns(2)
+            weather = c1.selectbox("☀️ Weather", options=weather_options, index=w_index)
+            
+            t_leave = c1.text_input("🚗 Time Leave House", value=curr_rep.get("Time_Leave", "06:00"))
+            t_reach = c1.text_input("📍 Time Reach Site", value=curr_rep.get("Time_Reach", "07:30"))
+            
+            stalls = c2.number_input("🍟 Other Stalls", min_value=0, value=clean_stalls)
+            
+            water = c2.toggle("🚰 Water Access?", value=(curr_rep.get("Water_Access") == "Yes"))
+            power = c2.toggle("🔌 Power Access?", value=(curr_rep.get("Power_Access") == "Yes"))
+            gen = st.text_area("✍️ General Comments", value=str(curr_rep.get("General_Comments", "")))
+            
+            # The Save Button
+            save_btn = st.form_submit_button("💾 Save Daily Report")
+            
+            if save_btn:
+                new_r = {
+                    "Event_ID": eid, 
+                    "Report_Date": rep_date_str, 
+                    "Weather": weather,
+                    "Time_Leave": t_leave, 
+                    "Time_Reach": t_reach, 
+                    "Other_Stalls": stalls,
+                    "Water_Access": "Yes" if water else "No", 
+                    "Power_Access": "Yes" if power else "No",
+                    "General_Comments": gen
+                }
+                
+                # Update the dataframe
+                mask = (df_rep['Event_ID'] == eid) & (df_rep['Report_Date'] == rep_date_str)
+                df_rep = pd.concat([df_rep[~mask], pd.DataFrame([new_r])], ignore_index=True)
+                
+                # Write back to Google Sheets
+                conn.update(worksheet="Event_Reports", data=df_rep)
+                st.cache_data.clear() 
+                st.success("Report Saved!")
+                st.rerun()
     # with tab_rep:
     #     rep_date_str = selected_report_date.strftime('%d/%m/%Y')
     #     st.subheader(f"📝 Report: {selected_report_date.strftime('%A, %d %b')}")
+        
     #     df_rep = get_data("Event_Reports")
     #     day_match = df_rep[(df_rep['Event_ID'] == eid) & (df_rep['Report_Date'] == rep_date_str)]
     #     curr_rep = day_match.iloc[0] if not day_match.empty else {}
 
+    #     # --- DATA CLEANING (The Full Stack Habit) ---
+    #     # Ensure 'stalls' is a valid integer even if the sheet is empty
+    #     raw_stalls = curr_rep.get("Other_Stalls", 0)
+    #     try:
+    #         # Handle NaN, None, or empty strings
+    #         clean_stalls = int(float(raw_stalls)) if pd.notna(raw_stalls) and raw_stalls != "" else 0
+    #     except ValueError:
+    #         clean_stalls = 0
+
     #     with st.form("daily_rep"):
     #         c1, c2 = st.columns(2)
-    #         weather = c1.selectbox("☀️ Weather", ["Sunny", "Cloudy", "Rainy", "Windy", "Heat"], index=0)
+    #         weather = c1.selectbox("☀️ Weather", ["Sunny", "Cloudy", "Rainy", "Windy", "Heat"], 
+    #                               index=0 if not curr_rep.get("Weather") else ["Sunny", "Cloudy", "Rainy", "Windy", "Heat"].index(curr_rep.get("Weather")))
+            
     #         t_leave = c1.text_input("🚗 Time Leave House", value=curr_rep.get("Time_Leave", "06:00"))
     #         t_reach = c1.text_input("📍 Time Reach Site", value=curr_rep.get("Time_Reach", "07:30"))
             
-    #         stalls = c2.number_input("🍟 Other Stalls", min_value=0, value=int(curr_rep.get("Other_Stalls", 0)))
+    #         # Using our clean_stalls variable here
+    #         stalls = c2.number_input("🍟 Other Stalls", min_value=0, value=clean_stalls)
+            
     #         water = c2.toggle("🚰 Water Access?", value=(curr_rep.get("Water_Access") == "Yes"))
     #         power = c2.toggle("🔌 Power Access?", value=(curr_rep.get("Power_Access") == "Yes"))
     #         gen = st.text_area("✍️ General Comments", value=str(curr_rep.get("General_Comments", "")))
@@ -242,56 +322,11 @@ def show_event_workspace(eid, get_data, conn):
     #             mask = (df_rep['Event_ID'] == eid) & (df_rep['Report_Date'] == rep_date_str)
     #             df_rep = pd.concat([df_rep[~mask], pd.DataFrame([new_r])], ignore_index=True)
     #             conn.update(worksheet="Event_Reports", data=df_rep)
+    #             st.cache_data.clear() # Clear cache so data refreshes
     #             st.success("Report Saved!"); st.rerun()
-# ==========================================
-    # 📝 TAB 3: DAILY REPORT (Matches Schema)
-    # ==========================================
-    with tab_rep:
-        rep_date_str = selected_report_date.strftime('%d/%m/%Y')
-        st.subheader(f"📝 Report: {selected_report_date.strftime('%A, %d %b')}")
-        
-        df_rep = get_data("Event_Reports")
-        day_match = df_rep[(df_rep['Event_ID'] == eid) & (df_rep['Report_Date'] == rep_date_str)]
-        curr_rep = day_match.iloc[0] if not day_match.empty else {}
 
-        # --- DATA CLEANING (The Full Stack Habit) ---
-        # Ensure 'stalls' is a valid integer even if the sheet is empty
-        raw_stalls = curr_rep.get("Other_Stalls", 0)
-        try:
-            # Handle NaN, None, or empty strings
-            clean_stalls = int(float(raw_stalls)) if pd.notna(raw_stalls) and raw_stalls != "" else 0
-        except ValueError:
-            clean_stalls = 0
+    
 
-        with st.form("daily_rep"):
-            c1, c2 = st.columns(2)
-            weather = c1.selectbox("☀️ Weather", ["Sunny", "Cloudy", "Rainy", "Windy", "Heat"], 
-                                  index=0 if not curr_rep.get("Weather") else ["Sunny", "Cloudy", "Rainy", "Windy", "Heat"].index(curr_rep.get("Weather")))
-            
-            t_leave = c1.text_input("🚗 Time Leave House", value=curr_rep.get("Time_Leave", "06:00"))
-            t_reach = c1.text_input("📍 Time Reach Site", value=curr_rep.get("Time_Reach", "07:30"))
-            
-            # Using our clean_stalls variable here
-            stalls = c2.number_input("🍟 Other Stalls", min_value=0, value=clean_stalls)
-            
-            water = c2.toggle("🚰 Water Access?", value=(curr_rep.get("Water_Access") == "Yes"))
-            power = c2.toggle("🔌 Power Access?", value=(curr_rep.get("Power_Access") == "Yes"))
-            gen = st.text_area("✍️ General Comments", value=str(curr_rep.get("General_Comments", "")))
-            
-            if st.form_submit_button("💾 Save Daily Report"):
-                new_r = {
-                    "Event_ID": eid, "Report_Date": rep_date_str, "Weather": weather,
-                    "Time_Leave": t_leave, "Time_Reach": t_reach, "Other_Stalls": stalls,
-                    "Water_Access": "Yes" if water else "No", "Power_Access": "Yes" if power else "No",
-                    "General_Comments": gen
-                }
-                mask = (df_rep['Event_ID'] == eid) & (df_rep['Report_Date'] == rep_date_str)
-                df_rep = pd.concat([df_rep[~mask], pd.DataFrame([new_r])], ignore_index=True)
-                conn.update(worksheet="Event_Reports", data=df_rep)
-                st.cache_data.clear() # Clear cache so data refreshes
-                st.success("Report Saved!"); st.rerun()
-
-    # with tab_stf: st.info("Staffing Module: Under Construction")
    # ==========================================
     # 👥 TAB 3: STAFFING
     # ==========================================
