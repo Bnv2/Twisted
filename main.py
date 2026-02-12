@@ -28,7 +28,7 @@ PAGE_PERMISSIONS = {
     "🏠 Event Hub": ["Admin", "Staff", "Manager", "Logistics"],
     "➕ Create Event":    ["Admin", "Manager"],
     "👥 Staff":          ["Admin"],
-    "📦 Inventory":      ["Admin", "Logistics", "Manager"],
+    "📦 Inventory":      ["Admin", "Logistics"],
     "📂 Workspace":      ["Admin", "Staff", "Manager", "Logistics"],
     "📜 History":        ["Admin"],
     "🗂️ All Events Archive": ["Admin", "Staff", "Manager"],
