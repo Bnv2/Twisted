@@ -181,7 +181,7 @@ def show_event_workspace(eid, get_data, conn):
             r2c1, r2c2 = st.columns(2)
             setup_list = ["Marquee", "Food Truck", "Indoor", "Cart"]
             try:
-                current_setup_idx = setup_list.index(curr_log.get("Setup_Type", "Marquee"))
+                current_setup_idx = setup_list.index(curr_log.get("Setup_Type", "Food Truck"))
             except ValueError:
                 current_setup_idx = 0
             
@@ -207,7 +207,7 @@ def show_event_workspace(eid, get_data, conn):
                 # Filter old record and update
                 df_log = df_log[df_log['Event_ID'] != eid] if 'Event_ID' in df_log.columns else df_log
                 df_log = pd.concat([df_log, pd.DataFrame([new_log_data])], ignore_index=True)
-                conn.update(worksheet="Logistics", data=df_log)
+                conn.update(worksheet="Logistics_Details", data=df_log)
                 st.success("Logistics Updated!")
                 st.rerun()
 
