@@ -30,7 +30,7 @@ PAGE_PERMISSIONS = {
     "👥 Staff":          ["Admin"],
     "📦 Inventory":      ["Admin", "Logistics", "Manager"],
     "📂 Workspace":      ["Admin", "Staff", "Manager", "Logistics"],
-    "📜 History":        ["Admin"],
+    "📜 History":        ["Admin", "Manager"],
     "🗂️ All Events Archive": ["Admin", "Staff"],
 }
 
