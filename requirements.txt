@@ -2,6 +2,6 @@ streamlit
 pandas
 supabase
 python-dotenv
-streamlit-gsheets
+st-gsheets-connection
 google-api-python-client
 google-auth
