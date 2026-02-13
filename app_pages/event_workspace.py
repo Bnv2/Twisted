@@ -427,82 +427,189 @@ def show_event_workspace(eid, get_data, db):
         else:
             st.caption("Only Admins can modify the roster.")
 
-  # ==========================================
-    # 💰 TAB 5: SALES (Schema Aligned)
+# ==========================================
+    # 💰 TAB 5: SALES (Complete Schema-Aligned)
     # ==========================================
     with tab_sales:
+        # 1. FETCH DATA
         @st.cache_data(ttl=600)
         def get_sales_data():
-            return db.read_table("event_sales") # Table is lowercase in SQL
+            # Matches your SQL table name 'public.event_sales'
+            return db.read_table("event_sales")
 
+        # Fetch Master Events to get Venue and Multi-day status
+        df_master_events = get_data("Events") 
         df_sales_dest = get_sales_data()
-        
-        # --- 🛡️ Schema Mapping & Safety ---
-        if not df_sales_dest.empty:
-            df_sales_dest.columns = [str(c).strip() for c in df_sales_dest.columns]
+
+        # Safety Check for Master Data
+        if df_master_events.empty:
+            st.error("⚠️ Master Event list is empty. Please check the 'Events' table.")
+            st.stop()
+
+        # Extract Event Info (PascalCase matches your Events master sheet)
+        event_match = df_master_events[df_master_events['Event_ID'] == eid]
+        if not event_match.empty:
+            venue_name = event_match.iloc[0]['Venue']
+            is_multi = str(event_match.iloc[0].get('Is_Multi_Day', 'No')) == "Yes"
         else:
-            df_sales_dest = pd.DataFrame(columns=['event_id', 'total_revenue', 'card_sales', 'cash_sales'])
+            venue_name = "Unknown Venue"
+            is_multi = False
 
-        # Logic Mapping:
-        # 'Event_ID' -> 'event_id'
-        # 'Total_Gross_Sales' -> 'total_revenue'
-        # 'Eftpos' -> 'card_sales'
-        # 'Cash' -> 'cash_sales'
-
-        event_info = df_master_events[df_master_events['Event_ID'] == eid]
-        venue_name = event_info.iloc[0]['Venue'] if not event_info.empty else "Unknown"
-        is_multi = str(event_info.iloc[0].get('Is_Multi_Day', 'No')) == "Yes"
-        
-        # METRICS (Updated to use lowercase snake_case columns)
+        # METRICS (Mapped to lowercase snake_case from your SQL schema)
         day_total = 0.0
         if not df_sales_dest.empty:
+            # Ensure column names are clean
+            df_sales_dest.columns = [str(c).strip() for c in df_sales_dest.columns]
+            # Filter by event_id (SQL schema name)
             day_total = df_sales_dest[df_sales_dest['event_id'] == str(eid)]['total_revenue'].sum()
         
         m_col1, m_col2 = st.columns(2)
         m_col1.metric("Today's Gross", f"${day_total:,.2f}")
+        if is_multi:
+            # Multi-day total (sum of all sales for this event_id)
+            m_col2.metric("Event Total Revenue", f"${day_total:,.2f}")
         
         st.divider()
 
-        # 2. FORM STATE
-        if "form_id" not in st.session_state: st.session_state.form_id = 0
-        if "fill_val" not in st.session_state: st.session_state.fill_val = 0.0
+        # 2. FORM STATE MANAGEMENT
+        if "form_id" not in st.session_state: 
+            st.session_state.form_id = 0
 
-        # 3. THE FRAGMENT
+        # 3. THE SALES ENTRY FRAGMENT
         @st.fragment
         def render_sales_form():
             st.subheader(f"📝 Sales Entry: {selected_report_date.strftime('%d/%m/%Y')}")
             fid = st.session_state.form_id
             
-            st.markdown("#### 1. Total Payments")
+            # --- STEP 1: INPUTS ---
+            st.markdown("#### 1. Shift Floats")
+            f1, f2 = st.columns(2)
+            v_open = f1.number_input("Opening Float", min_value=0.0, step=10.0, key=f"open_{fid}")
+            v_close = f2.number_input("Closing Float", min_value=0.0, step=10.0, key=f"close_{fid}")
+
+            st.markdown("#### 2. Payment Breakdown")
             p1, p2 = st.columns(2)
-            v_card = p1.number_input("Card / Eftpos", min_value=0.0, step=1.0, key=f"card_{fid}")
-            v_cash = p2.number_input("Cash", min_value=0.0, step=1.0, key=f"cash_{fid}")
+            v_card = p1.number_input("Card / Eftpos (card_sales)", min_value=0.0, step=1.0, key=f"card_{fid}")
+            v_cash = p2.number_input("Cash Sales (cash_sales)", min_value=0.0, step=1.0, key=f"cash_{fid}")
             
-            t_gross = v_card + v_cash
-            st.markdown(f"### Gross Total: :green[${t_gross:,.2f}]")
+            # Auto-calculate total revenue
+            t_revenue = v_card + v_cash
+            st.markdown(f"### Total Revenue: :green[${t_revenue:,.2f}]")
             
-            # --- SAVE LOGIC ---
-            if t_gross > 0:
+            st.divider()
+
+            # --- STEP 2: SAVE TO SUPABASE ---
+            if t_revenue > 0:
                 if st.button("💾 Save Sales Record", use_container_width=True, type="primary"):
-                    # Mapping to your SQL schema columns exactly
-                    new_row = {
+                    # This dictionary matches your SQL CREATE TABLE schema exactly
+                    new_sales_row = {
                         "event_id": str(eid), 
-                        "card_sales": v_card, 
-                        "cash_sales": v_cash,
-                        "total_revenue": t_gross,
-                        "opening_float": 0.0, # Placeholder based on your SQL
-                        "closing_float": 0.0  # Placeholder based on your SQL
+                        "opening_float": float(v_open),
+                        "cash_sales": float(v_cash),
+                        "card_sales": float(v_card),
+                        "closing_float": float(v_close),
+                        "total_revenue": float(t_revenue)
                     }
+                    
                     try:
-                        if db.insert_row("event_sales", new_row):
+                        if db.insert_row("event_sales", new_sales_row):
+                            # Increment form_id to clear inputs
                             st.session_state.form_id += 1
                             st.cache_data.clear() 
-                            st.success("✅ Sales Saved!")
+                            st.success("✅ Sales Record Saved Successfully!")
                             time.sleep(1)
                             st.rerun() 
+                        else:
+                            st.error("Failed to insert record into Supabase.")
                     except Exception as e:
-                        st.error(f"Error: {e}")
+                        st.error(f"Database Error: {e}")
+            else:
+                st.info("Enter sales figures to enable saving.")
 
+        # 4. EXECUTE FORM
         render_sales_form()
+
+        # 5. VIEW HISTORY (Optional convenience)
+        if not df_sales_dest.empty:
+            with st.expander("📊 View Recent Sales Records"):
+                history = df_sales_dest[df_sales_dest['event_id'] == str(eid)].sort_values('created_at', ascending=False)
+                st.dataframe(history[['created_at', 'card_sales', 'cash_sales', 'total_revenue']], use_container_width=True) 
+# # ==========================================
+  #   # 💰 TAB 5: SALES (Schema Aligned)
+  #   # ==========================================
+  #   with tab_sales:
+  #       @st.cache_data(ttl=600)
+  #       def get_sales_data():
+  #           return db.read_table("event_sales") # Table is lowercase in SQL
+
+  #       df_sales_dest = get_sales_data()
+        
+  #       # --- 🛡️ Schema Mapping & Safety ---
+  #       if not df_sales_dest.empty:
+  #           df_sales_dest.columns = [str(c).strip() for c in df_sales_dest.columns]
+  #       else:
+  #           df_sales_dest = pd.DataFrame(columns=['event_id', 'total_revenue', 'card_sales', 'cash_sales'])
+
+  #       # Logic Mapping:
+  #       # 'Event_ID' -> 'event_id'
+  #       # 'Total_Gross_Sales' -> 'total_revenue'
+  #       # 'Eftpos' -> 'card_sales'
+  #       # 'Cash' -> 'cash_sales'
+
+  #       event_info = df_master_events[df_master_events['Event_ID'] == eid]
+  #       venue_name = event_info.iloc[0]['Venue'] if not event_info.empty else "Unknown"
+  #       is_multi = str(event_info.iloc[0].get('Is_Multi_Day', 'No')) == "Yes"
+        
+  #       # METRICS (Updated to use lowercase snake_case columns)
+  #       day_total = 0.0
+  #       if not df_sales_dest.empty:
+  #           day_total = df_sales_dest[df_sales_dest['event_id'] == str(eid)]['total_revenue'].sum()
+        
+  #       m_col1, m_col2 = st.columns(2)
+  #       m_col1.metric("Today's Gross", f"${day_total:,.2f}")
+        
+  #       st.divider()
+
+  #       # 2. FORM STATE
+  #       if "form_id" not in st.session_state: st.session_state.form_id = 0
+  #       if "fill_val" not in st.session_state: st.session_state.fill_val = 0.0
+
+  #       # 3. THE FRAGMENT
+  #       @st.fragment
+  #       def render_sales_form():
+  #           st.subheader(f"📝 Sales Entry: {selected_report_date.strftime('%d/%m/%Y')}")
+  #           fid = st.session_state.form_id
+            
+  #           st.markdown("#### 1. Total Payments")
+  #           p1, p2 = st.columns(2)
+  #           v_card = p1.number_input("Card / Eftpos", min_value=0.0, step=1.0, key=f"card_{fid}")
+  #           v_cash = p2.number_input("Cash", min_value=0.0, step=1.0, key=f"cash_{fid}")
+            
+  #           t_gross = v_card + v_cash
+  #           st.markdown(f"### Gross Total: :green[${t_gross:,.2f}]")
+            
+  #           # --- SAVE LOGIC ---
+  #           if t_gross > 0:
+  #               if st.button("💾 Save Sales Record", use_container_width=True, type="primary"):
+  #                   # Mapping to your SQL schema columns exactly
+  #                   new_row = {
+  #                       "event_id": str(eid), 
+  #                       "card_sales": v_card, 
+  #                       "cash_sales": v_cash,
+  #                       "total_revenue": t_gross,
+  #                       "opening_float": 0.0, # Placeholder based on your SQL
+  #                       "closing_float": 0.0  # Placeholder based on your SQL
+  #                   }
+  #                   try:
+  #                       if db.insert_row("event_sales", new_row):
+  #                           st.session_state.form_id += 1
+  #                           st.cache_data.clear() 
+  #                           st.success("✅ Sales Saved!")
+  #                           time.sleep(1)
+  #                           st.rerun() 
+  #                   except Exception as e:
+  #                       st.error(f"Error: {e}")
+
+  #       render_sales_form()
 
    
