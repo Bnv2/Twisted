@@ -174,19 +174,36 @@ else:
     # --- THE ROUTER ---
     # This part actually triggers the functions inside your app_pages files
     page = st.session_state.page
+    # --- THE ROUTER ---
+    page = st.session_state.page
     
     if page == "🏠 Event Hub":
-        show_home(get_data, conn)
+        show_home(get_data, db)  # Changed conn -> db
     elif page == "➕ Create Event":
-        show_create_event(get_data, conn)
+        show_create_event(get_data, db)  # Changed conn -> db
     elif page == "➕ Create Staff":
-        from app_pages.create_staff import show_create_staff # Import here or at top
-        show_create_staff(get_data, conn)
+        from app_pages.create_staff import show_create_staff 
+        show_create_staff(get_data, db)  # Changed conn -> db
     elif page == "👥 Staff":
-        show_staff(get_data, conn)
+        show_staff(get_data, db)  # Changed conn -> db
     elif page == "🗂️ All Events Archive": 
-        show_all_events(get_data)
+        show_all_events(get_data) # This one usually only needs get_data
     elif page == "📦 Inventory":
-        show_logs(get_data, conn)
+        show_logs(get_data, db)  # Changed conn -> db
     elif page == "📈 Event Workspace":    
-        show_event_workspace(st.session_state.selected_event_id, get_data, conn)
+        show_event_workspace(st.session_state.selected_event_id, get_data, db) # Changed conn -> db
+    # if page == "🏠 Event Hub":
+    #     show_home(get_data, conn)
+    # elif page == "➕ Create Event":
+    #     show_create_event(get_data, conn)
+    # elif page == "➕ Create Staff":
+    #     from app_pages.create_staff import show_create_staff # Import here or at top
+    #     show_create_staff(get_data, conn)
+    # elif page == "👥 Staff":
+    #     show_staff(get_data, conn)
+    # elif page == "🗂️ All Events Archive": 
+    #     show_all_events(get_data)
+    # elif page == "📦 Inventory":
+    #     show_logs(get_data, conn)
+    # elif page == "📈 Event Workspace":    
+    #     show_event_workspace(st.session_state.selected_event_id, get_data, conn)
