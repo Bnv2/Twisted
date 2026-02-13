@@ -1,5 +1,6 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
+# from streamlit_gsheets import GSheetsConnection
+from modules.supabase_db import get_supabase
 import pandas as pd
 import re
 import random
@@ -21,7 +22,9 @@ from app_pages.create_staff import show_create_staff
 
 # --- CONFIG ---
 st.set_page_config(page_title="Twisted Potato Hub", layout="wide", page_icon="🚚")
-conn = st.connection("gsheets", type=GSheetsConnection)
+# conn = st.connection("gsheets", type=GSheetsConnection)
+db = get_supabase()
+
 
 # --- ROLE PERMISSIONS ---
 PAGE_PERMISSIONS = {
