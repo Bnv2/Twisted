@@ -5,7 +5,7 @@ from datetime import datetime
 from modules.ui_utils import render_mini_map
 import time
 ### new change - gemini ###
-from supabase_db import db
+from module.supabase_db import db
 ### new change gemini end ###
 
 # from square.client import Client
