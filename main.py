@@ -22,8 +22,8 @@ from app_pages.create_staff import show_create_staff
 
 # --- CONFIG ---
 st.set_page_config(page_title="Twisted Potato Hub", layout="wide", page_icon="🚚")
-# conn = st.connection("gsheets", type=GSheetsConnection)
-db = get_supabase()
+conn = st.connection("gsheets", type=GSheetsConnection)  # Keep for migration
+db = get_supabase()  # NEW - Supabase connection
 
 
 # --- ROLE PERMISSIONS ---
@@ -47,12 +47,17 @@ if "user_role" not in st.session_state:
 if "user_email" not in st.session_state:
     st.session_state.user_email = ""
 
-# --- GLOBAL HELPERS ---
+# --- GLOBAL HELPERS --- #removed for supabase 
+# def get_data(sheet_name):
+#     try:
+#         return conn.read(worksheet=sheet_name, ttl=0)
+#     except Exception:
+#         return pd.DataFrame()
+###### added new ########
 def get_data(sheet_name):
-    try:
-        return conn.read(worksheet=sheet_name, ttl=0)
-    except Exception:
-        return pd.DataFrame()
+    """Read from Supabase instead of Google Sheets"""
+    return db.read_table(sheet_name)
+#### added new end ########
 
 # ==========================================
 # 🔐 AUTHENTICATION LAYER
