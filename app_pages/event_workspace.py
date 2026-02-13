@@ -307,12 +307,13 @@ def show_event_workspace(eid, get_data, db):
                     st.success(f"Report for {rep_date_str} Saved!")
                     st.rerun()
 
-    # ==========================================
+  # ==========================================
     # 👥 TAB 4: STAFFING
     # ==========================================
     with tab_staff:
         st.subheader("📋 Available Staff Gallery")
 
+        # FETCH DATA using Supabase/get_data
         df_staff_db = get_data("Staff_Database")
         df_staffing = get_data("Event_Staffing")
         
@@ -326,25 +327,21 @@ def show_event_workspace(eid, get_data, db):
             
             for i, (idx, s_row) in enumerate(df_staff_db.iterrows()):
                 name = s_row['Staff_Name']
-                phone = str(s_row.get('Phone', ''))
-
-                # --- 📞 PHONE CLEANING (Removes the .0) ---
-                # raw_phone = str(s_row.get('Phone', ''))
-                # clean_phone = int(raw_phone)
-               # 1. Get raw string and remove decimal
+                
+                # --- 📞 PHONE CLEANING ---
                 raw_phone = str(s_row.get('Phone', ''))
                 clean_phone = raw_phone.split('.')[0].strip()
 
-                # 2. Re-add the leading zero if it's an Australian mobile (9 digits needs a 0)
+                # Re-add leading zero for Aus Mobile
                 if len(clean_phone) == 9 and clean_phone.startswith('4'):
                     clean_phone = "0" + clean_phone
 
-                # 3. Handle 'nan' or empty cells
                 if clean_phone.lower() == "nan" or not clean_phone:
                     clean_phone = None
+
                 # --- ⭐ STAR RATING LOGIC ---
                 try:
-                    num_stars = int(s_row.get('Rating', 0))
+                    num_stars = int(float(s_row.get('Rating', 0)))
                 except:
                     num_stars = 0
                 star_display = "⭐" * num_stars if num_stars > 0 else "No Rating"
@@ -355,16 +352,10 @@ def show_event_workspace(eid, get_data, db):
                         h1.markdown(f"**{name}**")
                         h2.markdown("🟢 **Active**" if name in assigned_names else "⚪ **Idle**")
                         
-                        # --- 📞 CLICK-TO-CALL LINK ---
-                        # if phone:
-                        #     st.markdown(f"📞 [ {phone} ](tel:{phone})")
-                        # else:
-                        #     st.caption("No phone number")
                         if clean_phone:
                             st.markdown(f"📞 [ {clean_phone} ](tel:{clean_phone})")
                         else:
                             st.caption("📞 Phone: N/A")
-                            
 
                         st.caption(f"Rating: {star_display}")
                         st.write(f"🛠️ **Skills:** {s_row.get('Skills', 'N/A')}")
@@ -372,18 +363,17 @@ def show_event_workspace(eid, get_data, db):
                         if name in assigned_names:
                             if is_adm:
                                 if st.button(f"❌ Remove {name.split()[0]}", key=f"rem_{idx}", use_container_width=True):
-                                    df_staffing = df_staffing[~((df_staffing['Event_ID'] == eid) & (df_staffing['Staff_Name'] == name))]
-                                    conn.update(worksheet="Event_Staffing", data=df_staffing)
-                                    st.rerun()
+                                    # SUPABASE MIGRATION: Filter out assigned staff
+                                    df_staffing_updated = df_staffing[~((df_staffing['Event_ID'] == eid) & (df_staffing['Staff_Name'] == name))]
+                                    if db.update_table("Event_Staffing", df_staffing_updated):
+                                        st.rerun()
                         else:
                             with st.expander("➕ Assign to Event"):
                                 with st.form(key=f"assign_f_{idx}"):
                                     c1, c2 = st.columns(2)
-                                    def_in = locals().get('new_bump_in', "08:00")
-                                    def_out = locals().get('new_bump_out', "18:00")
-                                    
-                                    st_time_str = c1.text_input("Start", value=def_in)
-                                    en_time_str = c2.text_input("End", value=def_out)
+                                    # Fallback defaults if logistics variables aren't locally available
+                                    st_time_str = c1.text_input("Start", value="08:00")
+                                    en_time_str = c2.text_input("End", value="18:00")
 
                                     # --- ⚠️ 8-HOUR WARNING LOGIC ---
                                     from datetime import datetime
@@ -392,61 +382,48 @@ def show_event_workspace(eid, get_data, db):
                                         t1 = datetime.strptime(st_time_str, fmt)
                                         t2 = datetime.strptime(en_time_str, fmt)
                                         delta = (t2 - t1).total_seconds() / 3600
-                                        if delta < 0: delta += 24 # Handle shifts crossing midnight
+                                        if delta < 0: delta += 24 
                                         
                                         if delta > 8:
-                                            st.warning(f"⚠️ Long Shift: {delta:.1f} hours. Ensure staff gets breaks!")
+                                            st.warning(f"⚠️ Long Shift: {delta:.1f} hrs")
                                     except:
-                                        pass # If time format is invalid, skip warning
+                                        pass
 
                                     if st.form_submit_button("Confirm Assignment", use_container_width=True):
                                         new_entry = {
                                             "Event_ID": eid, "Staff_Name": name, "Start_Time": st_time_str,
                                             "End_Time": en_time_str, "Payment_Status": "Pending", "Type": "Standard"
                                         }
-                                        df_staffing = pd.concat([df_staffing, pd.DataFrame([new_entry])], ignore_index=True)
-                                        conn.update(worksheet="Event_Staffing", data=df_staffing)
-                                        st.success(f"{name} added!")
-                                        st.rerun()
+                                        # SUPABASE MIGRATION: 
+                                        if db.insert_row("Event_Staffing", new_entry):
+                                            st.success(f"{name} added!")
+                                            st.rerun()
         else:
             st.warning("No staff found in Staff_Database.")
-        # else:
-        #     st.info("No staff assigned to this event yet.")
 
         st.divider()
 
-        # --- ➕ ADD STAFF (Matching Staff_Database columns) ---
+        # --- ➕ ADMIN QUICK ADD ---
         if is_adm:
-            with st.expander("➕ Assign Staff Member"):
-                with st.form("add_staff_form", clear_on_submit=True):
-                    # Get names from Staff_Database
+            with st.expander("➕ Assign Staff Member (Search)"):
+                with st.form("add_staff_form_quick", clear_on_submit=True):
                     staff_options = df_staff_db['Staff_Name'].tolist() if not df_staff_db.empty else []
                     sel_staff = st.selectbox("Select Staff", staff_options)
                     
-                    # Layout for adding
                     col1, col2 = st.columns(2)
-                    # Pull defaults from Logistics (locals) if available
-                    def_in = locals().get('new_bump_in', "08:00")
-                    def_out = locals().get('new_bump_out', "18:00")
-                    
-                    s_time = col1.text_input("Start Time", value=def_in)
-                    e_time = col2.text_input("End Time", value=def_out)
+                    s_time = col1.text_input("Start Time", value="08:00")
+                    e_time = col2.text_input("End Time", value="18:00")
                     
                     if st.form_submit_button("Assign to Event", use_container_width=True):
                         if sel_staff:
-                            new_entry = {
-                                "Event_ID": eid,
-                                "Staff_Name": sel_staff,
-                                "Start_Time": s_time,
-                                "End_Time": e_time,
-                                "Payment_Status": "Pending",
-                                "Type": "Standard" # Default type
+                            new_entry_quick = {
+                                "Event_ID": eid, "Staff_Name": sel_staff,
+                                "Start_Time": s_time, "End_Time": e_time,
+                                "Payment_Status": "Pending", "Type": "Standard"
                             }
-                            # APPEND: This ensures we don't overwrite other staff
-                            df_staffing = pd.concat([df_staffing, pd.DataFrame([new_entry])], ignore_index=True)
-                            conn.update(worksheet="Event_Staffing", data=df_staffing)
-                            st.success(f"Added {sel_staff}!")
-                            st.rerun()
+                            if db.insert_row("Event_Staffing", new_entry_quick):
+                                st.success(f"Added {sel_staff}!")
+                                st.rerun()
         else:
             st.caption("Only Admins can modify the roster.")
 
