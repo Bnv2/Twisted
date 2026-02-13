@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 # 1. Custom Module Imports
 from modules.auth import send_admin_code, nuclear_clean
 from modules.drive_utils import upload_to_drive
-from modules.supabase_db import get_supabase
+from supabase_db import get_supabase
 
 # 2. Page Imports
 from app_pages.home import show_home
