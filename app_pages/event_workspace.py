@@ -233,8 +233,8 @@ def show_event_workspace(eid, get_data, db):
                 if db.update_table("Logistics", df_log_updated):
                     st.success("Logistics Updated!")
                     st.rerun()
-    # ==========================================
-    # 📝 TAB 3: DAILY REPORT (Matches Schema)
+   # ==========================================
+    # 📝 TAB 3: DAILY REPORT
     # ==========================================
     with tab_rep:
         rep_date_str = selected_report_date.strftime('%d/%m/%Y')
@@ -246,14 +246,17 @@ def show_event_workspace(eid, get_data, db):
         df_rep.columns = [str(c).strip() for c in df_rep.columns]
         
         # Filter for the specific event and date
-        day_match = df_rep[(df_rep['Event_ID'] == eid) & (df_rep['Report_Date'] == rep_date_str)]
-        curr_rep = day_match.iloc[0] if not day_match.empty else {}
+        if not df_rep.empty and 'Event_ID' in df_rep.columns:
+            day_match = df_rep[(df_rep['Event_ID'] == eid) & (df_rep['Report_Date'] == rep_date_str)]
+            curr_rep = day_match.iloc[0] if not day_match.empty else {}
+        else:
+            curr_rep = {}
 
-        # --- DATA CLEANING (The Full Stack Habit) ---
+        # --- DATA CLEANING ---
         raw_stalls = curr_rep.get("Other_Stalls", 0)
         try:
             clean_stalls = int(float(raw_stalls)) if pd.notna(raw_stalls) and str(raw_stalls).strip() != "" else 0
-        except:
+        except (ValueError, TypeError):
             clean_stalls = 0
 
         # --- WEATHER SAFETY ---
@@ -275,10 +278,10 @@ def show_event_workspace(eid, get_data, db):
             gen = st.text_area("✍️ General Comments", value=str(curr_rep.get("General_Comments", "")))
             
             # The Save Button
-            save_btn = st.form_submit_button("💾 Save Daily Report")
+            save_btn = st.form_submit_button("💾 Save Daily Report", use_container_width=True)
             
             if save_btn:
-                new_r = {
+                new_report_row = {
                     "Event_ID": eid, 
                     "Report_Date": rep_date_str, 
                     "Weather": weather,
@@ -290,15 +293,19 @@ def show_event_workspace(eid, get_data, db):
                     "General_Comments": gen
                 }
                 
-                # Update the dataframe
-                mask = (df_rep['Event_ID'] == eid) & (df_rep['Report_Date'] == rep_date_str)
-                df_rep = pd.concat([df_rep[~mask], pd.DataFrame([new_r])], ignore_index=True)
+                # SUPABASE MIGRATION: Logic to replace existing entry
+                # Filter out the specific row if it exists (masking both ID and Date)
+                if not df_rep.empty and 'Event_ID' in df_rep.columns:
+                    mask = (df_rep['Event_ID'] == eid) & (df_rep['Report_Date'] == rep_date_str)
+                    df_rep_updated = pd.concat([df_rep[~mask], pd.DataFrame([new_report_row])], ignore_index=True)
+                else:
+                    df_rep_updated = pd.DataFrame([new_report_row])
                 
-                # Write back to Google Sheets
-                conn.update(worksheet="Event_Reports", data=df_rep)
-                st.cache_data.clear() 
-                st.success("Report Saved!")
-                st.rerun()
+                # Write back to Supabase
+                if db.update_table("Event_Reports", df_rep_updated):
+                    st.cache_data.clear() 
+                    st.success(f"Report for {rep_date_str} Saved!")
+                    st.rerun()
 
     # ==========================================
     # 👥 TAB 4: STAFFING
