@@ -1,6 +1,6 @@
 import streamlit as st
 # from streamlit_gsheets import GSheetsConnection
-from module.supabase_db import get_supabase
+from modules.supabase_db import get_supabase
 import pandas as pd
 import re
 import random
@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 # 1. Custom Module Imports
 from modules.auth import send_admin_code, nuclear_clean
 from modules.drive_utils import upload_to_drive
-from module.supabase_db import get_supabase
+from modules.supabase_db import get_supabase
 
 # 2. Page Imports
 from app_pages.home import show_home
