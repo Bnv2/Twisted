@@ -1,6 +1,6 @@
 import streamlit as st
 # from streamlit_gsheets import GSheetsConnection
-from modules.supabase_db import get_supabase
+from supabase_db import get_supabase
 import pandas as pd
 import re
 import random
