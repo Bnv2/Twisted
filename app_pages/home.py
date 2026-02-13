@@ -7,18 +7,18 @@ from streamlit_gsheets import GSheetsConnection
 # Keep your existing connection
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- NEW DATA HANDLING START ---
-if "data_loaded" not in st.session_state:
-    # This runs ONLY ONCE. 
-    # It fetches all 10 sheets and puts them in the app's memory.
-    st.session_state.df_events = conn.read(worksheet="Events")
-    st.session_state.df_logistics = conn.read(worksheet="Logistics_Details")
-    st.session_state.df_finance = conn.read(worksheet="Event_Financials")
-    st.session_state.df_contacts = conn.read(worksheet="Event_Contacts")
-    st.session_state.df_reports = conn.read(worksheet="Event_Reports")
-    # ... add your other 5 tabs here ...
-    st.session_state.data_loaded = True
-# --- NEW DATA HANDLING END ---
+# # --- NEW DATA HANDLING START ---
+# if "data_loaded" not in st.session_state:
+#     # This runs ONLY ONCE. 
+#     # It fetches all 10 sheets and puts them in the app's memory.
+#     st.session_state.df_events = conn.read(worksheet="Events")
+#     st.session_state.df_logistics = conn.read(worksheet="Logistics_Details")
+#     st.session_state.df_finance = conn.read(worksheet="Event_Financials")
+#     st.session_state.df_contacts = conn.read(worksheet="Event_Contacts")
+#     st.session_state.df_reports = conn.read(worksheet="Event_Reports")
+#     # ... add your other 5 tabs here ...
+#     st.session_state.data_loaded = True
+# # --- NEW DATA HANDLING END ---
 
 def show_home(get_data, conn):
     # --- 🎨 1. CSS STYLING (Restoring your Screenshot Look) ---
