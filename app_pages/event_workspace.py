@@ -427,35 +427,39 @@ def show_event_workspace(eid, get_data, db):
         else:
             st.caption("Only Admins can modify the roster.")
 
-   # ==========================================
-    # 💰 TAB 5: SALES (Supabase Migrated)
+  # ==========================================
+    # 💰 TAB 5: SALES (Schema Aligned)
     # ==========================================
     with tab_sales:
-        # 1. FETCH DATA (Updated for Supabase)
         @st.cache_data(ttl=600)
         def get_sales_data():
-            # Fixes NameError by using db instead of conn
-            return db.read_table("Event_Sales")
+            return db.read_table("event_sales") # Table is lowercase in SQL
 
-        df_master_events = get_data("Events") 
         df_sales_dest = get_sales_data()
+        
+        # --- 🛡️ Schema Mapping & Safety ---
+        if not df_sales_dest.empty:
+            df_sales_dest.columns = [str(c).strip() for c in df_sales_dest.columns]
+        else:
+            df_sales_dest = pd.DataFrame(columns=['event_id', 'total_revenue', 'card_sales', 'cash_sales'])
+
+        # Logic Mapping:
+        # 'Event_ID' -> 'event_id'
+        # 'Total_Gross_Sales' -> 'total_revenue'
+        # 'Eftpos' -> 'card_sales'
+        # 'Cash' -> 'cash_sales'
 
         event_info = df_master_events[df_master_events['Event_ID'] == eid]
         venue_name = event_info.iloc[0]['Venue'] if not event_info.empty else "Unknown"
         is_multi = str(event_info.iloc[0].get('Is_Multi_Day', 'No')) == "Yes"
         
-        # METRICS
+        # METRICS (Updated to use lowercase snake_case columns)
         day_total = 0.0
-        grand_total = 0.0
         if not df_sales_dest.empty:
-            day_total = df_sales_dest[df_sales_dest['Event_ID'] == eid]['Total_Gross_Sales'].sum()
-            venue_history = df_sales_dest[df_sales_dest['Event_Venue'] == venue_name]
-            grand_total = venue_history['Total_Gross_Sales'].sum()
+            day_total = df_sales_dest[df_sales_dest['event_id'] == str(eid)]['total_revenue'].sum()
         
         m_col1, m_col2 = st.columns(2)
         m_col1.metric("Today's Gross", f"${day_total:,.2f}")
-        if is_multi:
-            m_col2.metric("Event Total (All Days)", f"${grand_total:,.2f}")
         
         st.divider()
 
@@ -469,70 +473,29 @@ def show_event_workspace(eid, get_data, db):
             st.subheader(f"📝 Sales Entry: {selected_report_date.strftime('%d/%m/%Y')}")
             fid = st.session_state.form_id
             
-            # --- STEP 1: TOTAL PAYMENTS ---
             st.markdown("#### 1. Total Payments")
             p1, p2 = st.columns(2)
-            v_eftpos = p1.number_input("Card / Eftpos", min_value=0.0, step=1.0, key=f"eftpos_{fid}")
+            v_card = p1.number_input("Card / Eftpos", min_value=0.0, step=1.0, key=f"card_{fid}")
             v_cash = p2.number_input("Cash", min_value=0.0, step=1.0, key=f"cash_{fid}")
             
-            t_gross = v_eftpos + v_cash
+            t_gross = v_card + v_cash
             st.markdown(f"### Gross Total: :green[${t_gross:,.2f}]")
-            st.divider()
             
-            # --- STEP 2: CATEGORY INPUTS ---
-            st.markdown("#### 2. Categories")
-            c1, c2, c3, c4 = st.columns(4)
-            v_quick = c1.number_input("Quick", min_value=0.0, step=1.0, key=f"quick_{fid}")
-            v_food = c2.number_input("Food", min_value=0.0, step=1.0, key=f"food_{fid}")
-            v_drinks = c3.number_input("Drinks", min_value=0.0, step=1.0, key=f"drinks_{fid}")
-            
-            v_uncat = c4.number_input(
-                "Uncategorised", 
-                min_value=0.0, 
-                step=1.0, 
-                value=st.session_state.fill_val, 
-                key=f"uncat_{fid}"
-            )
-            st.session_state.fill_val = v_uncat
-
-            # --- STEP 3: BALANCING & FILL ---
-            cat_sum = v_quick + v_food + v_drinks + v_uncat
-            diff = t_gross - cat_sum
-            
-            st.divider()
-            
-            if abs(diff) > 0.01:
-                b_col1, b_col2 = st.columns([2, 1])
-                b_col1.warning(f"⚠️ **Remaining to balance: ${diff:,.2f}**")
-                
-                if diff > 0:
-                    if b_col2.button(f"Auto-Fill ${diff:,.0f}", use_container_width=True):
-                        st.session_state.fill_val = float(v_uncat + diff)
-                        st.rerun(scope="fragment")
-            else:
-                st.success("✅ Totals Balance Perfectly!")
-
             # --- SAVE LOGIC ---
-            if round(t_gross, 2) == round(cat_sum, 2) and t_gross > 0:
+            if t_gross > 0:
                 if st.button("💾 Save Sales Record", use_container_width=True, type="primary"):
+                    # Mapping to your SQL schema columns exactly
                     new_row = {
-                        "Event_ID": eid, 
-                        "Event_Date": selected_report_date.strftime('%d/%m/%Y'),
-                        "Event_Venue": venue_name, 
-                        "Eftpos": v_eftpos, 
-                        "Cash": v_cash,
-                        "Total_Gross_Sales": t_gross, 
-                        "Total_Quick": v_quick,
-                        "Total_Food": v_food, 
-                        "Total_Drinks": v_drinks, 
-                        "Total_Uncategorised": v_uncat
+                        "event_id": str(eid), 
+                        "card_sales": v_card, 
+                        "cash_sales": v_cash,
+                        "total_revenue": t_gross,
+                        "opening_float": 0.0, # Placeholder based on your SQL
+                        "closing_float": 0.0  # Placeholder based on your SQL
                     }
                     try:
-                        # SUPABASE MIGRATION: Using insert_row for new sales entries
-                        if db.insert_row("Event_Sales", new_row):
-                            # Reset UI state
+                        if db.insert_row("event_sales", new_row):
                             st.session_state.form_id += 1
-                            st.session_state.fill_val = 0.0
                             st.cache_data.clear() 
                             st.success("✅ Sales Saved!")
                             time.sleep(1)
@@ -540,7 +503,6 @@ def show_event_workspace(eid, get_data, db):
                     except Exception as e:
                         st.error(f"Error: {e}")
 
-        # 4. EXECUTE
         render_sales_form()
 
    
