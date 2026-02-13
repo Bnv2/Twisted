@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 # 1. Custom Module Imports
 from modules.auth import send_admin_code, nuclear_clean
 from modules.drive_utils import upload_to_drive
+from modules.supabase_db import get_supabase
 
 # 2. Page Imports
 from app_pages.home import show_home
@@ -22,7 +23,7 @@ from app_pages.create_staff import show_create_staff
 
 # --- CONFIG ---
 st.set_page_config(page_title="Twisted Potato Hub", layout="wide", page_icon="🚚")
-conn = st.connection("gsheets", type=GSheetsConnection)  # Keep for migration
+# conn = st.connection("gsheets", type=GSheetsConnection)  # Keep for migration
 db = get_supabase()  # NEW - Supabase connection
 
 
@@ -54,8 +55,11 @@ if "user_email" not in st.session_state:
 #     except Exception:
 #         return pd.DataFrame()
 ###### added new ########
+# def get_data(sheet_name):
+#     """Read from Supabase instead of Google Sheets"""
+#     return db.read_table(sheet_name)
+@st.cache_data(ttl=60) # Caches data for 60 seconds
 def get_data(sheet_name):
-    """Read from Supabase instead of Google Sheets"""
     return db.read_table(sheet_name)
 #### added new end ########
 
