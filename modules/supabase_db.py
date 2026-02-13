@@ -287,3 +287,5 @@ class TwistedSupabase:
 def get_supabase():
     """Singleton Supabase connection for Streamlit"""
     return TwistedSupabase()
+
+db = get_supabase()
