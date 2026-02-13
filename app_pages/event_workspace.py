@@ -7,7 +7,7 @@ import time
 # from square.client import Client
 # from app_pages.event_workspace_tab5 import render_sales_tab
 
-def show_event_workspace(eid, get_data, conn):
+def show_event_workspace(eid, get_data, db):
     # --- 🛡️ 1. DATA ACQUISITION & SCHEMA MAPPING ---
     df_events = get_data("Events")
     event_match = df_events[df_events['Event_ID'] == eid]
@@ -20,12 +20,15 @@ def show_event_workspace(eid, get_data, conn):
 
     # --- 📅 2. DATE LOGIC (Multi-Day Support) ---
     try:
+        # Ensure we handle various date formats gracefully
         start_dt = pd.to_datetime(event_core['Date'], dayfirst=True)
         end_val = event_core.get('End_Date')
+        
         if pd.isna(end_val) or end_val == "" or str(end_val).lower() == "none":
             end_dt = start_dt
         else:
             end_dt = pd.to_datetime(end_val, dayfirst=True)
+            
         date_range = pd.date_range(start=start_dt, end=end_dt).date.tolist()
     except Exception as e:
         st.error(f"📅 Date Formatting Error: {e}")
@@ -34,17 +37,27 @@ def show_event_workspace(eid, get_data, conn):
     # --- 🏗️ UI HEADER ---
     h1, h2 = st.columns([3, 1])
     h1.title(f"📂 {event_core['Venue']}")
+    
+    # Updated navigation to match your main.py page name
     if h2.button("⬅️ Back to Home", use_container_width=True):
-        st.session_state.page = "🏠 Home Dashboard"; st.rerun()
+        st.session_state.page = "🏠 Event Hub"
+        st.rerun()
 
     # --- 🗓️ DAILY SELECTOR ---
     selected_report_date = date_range[0]
     if len(date_range) > 1:
-        selection = st.segmented_control("Select Reporting Day", options=date_range, 
-                                         format_func=lambda x: x.strftime("%a, %d %b"), default=date_range[0])
-        if selection: selected_report_date = selection
+        selection = st.segmented_control(
+            "Select Reporting Day", 
+            options=date_range, 
+            format_func=lambda x: x.strftime("%a, %d %b"), 
+            default=date_range[0]
+        )
+        if selection: 
+            selected_report_date = selection
 
-    tab_ov, tab_log, tab_rep, tab_staff, tab_sales = st.tabs(["📊 Overview", "🚛 Logistics", "📝 Daily Report", "👥 Staffing", "💰 Sales"])
+    tab_ov, tab_log, tab_rep, tab_staff, tab_sales = st.tabs([
+        "📊 Overview", "🚛 Logistics", "📝 Daily Report", "👥 Staffing", "💰 Sales"
+    ])
     
     # ==========================================
     # 📊 TAB 1: OVERVIEW
