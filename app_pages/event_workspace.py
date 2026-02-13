@@ -172,6 +172,7 @@ def show_event_workspace(eid, get_data, db):
     with tab_log:
         st.subheader("🚛 Logistics & Setup Details")
 
+        # Use the name consistent with your database schema
         df_log = get_data("Logistics")
         
         if not df_log.empty and 'Event_ID' in df_log.columns:
@@ -179,7 +180,7 @@ def show_event_workspace(eid, get_data, db):
             curr_log = log_match.iloc[0] if not log_match.empty else {}
         else:
             curr_log = {}
-            if 'Event_ID' not in df_log.columns:
+            if df_log.empty or 'Event_ID' not in df_log.columns:
                 df_log = pd.DataFrame(columns=['Event_ID', 'Setup_Type', 'Bump_In', 'Bump_Out', 'Parking', 'Log_Notes'])
 
         # Admin Toggle
@@ -199,9 +200,10 @@ def show_event_workspace(eid, get_data, db):
             r2c1, r2c2 = st.columns(2)
             setup_list = ["Marquee", "Food Truck", "Indoor", "Cart"]
             try:
-                current_setup_idx = setup_list.index(curr_log.get("Setup_Type", "Food Truck"))
-            except ValueError:
-                current_setup_idx = 0
+                current_val = curr_log.get("Setup_Type", "Food Truck")
+                current_setup_idx = setup_list.index(current_val) if current_val in setup_list else 1
+            except (ValueError, AttributeError):
+                current_setup_idx = 1
             
             new_setup = r2c1.selectbox("Setup Type", setup_list, index=current_setup_idx, disabled=not edit_log)
             new_parking = r2c2.text_input("Parking Info", value=str(curr_log.get("Parking", "")), disabled=not edit_log)
@@ -213,7 +215,7 @@ def show_event_workspace(eid, get_data, db):
             log_save_btn = st.form_submit_button("💾 Save Logistics", use_container_width=True, disabled=not edit_log)
 
             if log_save_btn and edit_log:
-                new_log_data = {
+                new_log_row = {
                     "Event_ID": eid, 
                     "Setup_Type": new_setup, 
                     "Bump_In": new_bump_in,
@@ -222,13 +224,15 @@ def show_event_workspace(eid, get_data, db):
                     "Log_Notes": new_log_notes
                 }
                 
-                # Filter old record and update
-                df_log = df_log[df_log['Event_ID'] != eid] if 'Event_ID' in df_log.columns else df_log
-                df_log = pd.concat([df_log, pd.DataFrame([new_log_data])], ignore_index=True)
-                conn.update(worksheet="Logistics_Details", data=df_log)
-                st.success("Logistics Updated!")
-                st.rerun()
-
+                # SUPABASE MIGRATION: 
+                # Filter old record out and concat the new one
+                df_log_updated = df_log[df_log['Event_ID'] != eid].copy() if 'Event_ID' in df_log.columns else df_log.copy()
+                df_log_updated = pd.concat([df_log_updated, pd.DataFrame([new_log_row])], ignore_index=True)
+                
+                # Update the "Logistics" table
+                if db.update_table("Logistics", df_log_updated):
+                    st.success("Logistics Updated!")
+                    st.rerun()
     # ==========================================
     # 📝 TAB 3: DAILY REPORT (Matches Schema)
     # ==========================================
