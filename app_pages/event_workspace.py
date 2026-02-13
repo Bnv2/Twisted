@@ -427,14 +427,15 @@ def show_event_workspace(eid, get_data, db):
         else:
             st.caption("Only Admins can modify the roster.")
 
-    # ==========================================
-    # 💰 TAB 5: SALES (Balanced Layout)
+   # ==========================================
+    # 💰 TAB 5: SALES (Supabase Migrated)
     # ==========================================
     with tab_sales:
-        # 1. FETCH DATA (Same as before)
+        # 1. FETCH DATA (Updated for Supabase)
         @st.cache_data(ttl=600)
         def get_sales_data():
-            return conn.read(worksheet="Event_Sales")
+            # Fixes NameError by using db instead of conn
+            return db.read_table("Event_Sales")
 
         df_master_events = get_data("Events") 
         df_sales_dest = get_sales_data()
@@ -485,7 +486,6 @@ def show_event_workspace(eid, get_data, db):
             v_food = c2.number_input("Food", min_value=0.0, step=1.0, key=f"food_{fid}")
             v_drinks = c3.number_input("Drinks", min_value=0.0, step=1.0, key=f"drinks_{fid}")
             
-            # Uncategorised Input
             v_uncat = c4.number_input(
                 "Uncategorised", 
                 min_value=0.0, 
@@ -493,24 +493,20 @@ def show_event_workspace(eid, get_data, db):
                 value=st.session_state.fill_val, 
                 key=f"uncat_{fid}"
             )
-            # This ensures that if you manually type in Uncategorised, the state updates
             st.session_state.fill_val = v_uncat
 
             # --- STEP 3: BALANCING & FILL ---
-            # Moved after inputs for better flow
             cat_sum = v_quick + v_food + v_drinks + v_uncat
             diff = t_gross - cat_sum
             
             st.divider()
             
-            if abs(diff) > 0.01: # Use small float check instead of 0
+            if abs(diff) > 0.01:
                 b_col1, b_col2 = st.columns([2, 1])
                 b_col1.warning(f"⚠️ **Remaining to balance: ${diff:,.2f}**")
                 
-                # Show Fill button if there is a gap
                 if diff > 0:
                     if b_col2.button(f"Auto-Fill ${diff:,.0f}", use_container_width=True):
-                        # Add current diff to whatever is already in Uncategorised
                         st.session_state.fill_val = float(v_uncat + diff)
                         st.rerun(scope="fragment")
             else:
@@ -520,28 +516,31 @@ def show_event_workspace(eid, get_data, db):
             if round(t_gross, 2) == round(cat_sum, 2) and t_gross > 0:
                 if st.button("💾 Save Sales Record", use_container_width=True, type="primary"):
                     new_row = {
-                        "Event_ID": eid, "Event_Date": selected_report_date.strftime('%d/%m/%Y'),
-                        "Event_Venue": venue_name, "Eftpos": v_eftpos, "Cash": v_cash,
-                        "Total_Gross_Sales": t_gross, "Total_Quick": v_quick,
-                        "Total_Food": v_food, "Total_Drinks": v_drinks, "Total_Uncategorised": v_uncat
+                        "Event_ID": eid, 
+                        "Event_Date": selected_report_date.strftime('%d/%m/%Y'),
+                        "Event_Venue": venue_name, 
+                        "Eftpos": v_eftpos, 
+                        "Cash": v_cash,
+                        "Total_Gross_Sales": t_gross, 
+                        "Total_Quick": v_quick,
+                        "Total_Food": v_food, 
+                        "Total_Drinks": v_drinks, 
+                        "Total_Uncategorised": v_uncat
                     }
                     try:
-                        fresh_df = conn.read(worksheet="Event_Sales", ttl=0)
-                        updated_df = pd.concat([fresh_df, pd.DataFrame([new_row])], ignore_index=True)
-                        conn.update(worksheet="Event_Sales", data=updated_df)
-                        
-                        # Reset UI
-                        st.session_state.form_id += 1
-                        st.session_state.fill_val = 0.0
-                        st.cache_data.clear() 
-                        st.success("✅ Saved!")
-                        time.sleep(1)
-                        st.rerun() 
+                        # SUPABASE MIGRATION: Using insert_row for new sales entries
+                        if db.insert_row("Event_Sales", new_row):
+                            # Reset UI state
+                            st.session_state.form_id += 1
+                            st.session_state.fill_val = 0.0
+                            st.cache_data.clear() 
+                            st.success("✅ Sales Saved!")
+                            time.sleep(1)
+                            st.rerun() 
                     except Exception as e:
                         st.error(f"Error: {e}")
 
         # 4. EXECUTE
         render_sales_form()
-
 
    
