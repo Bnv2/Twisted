@@ -428,112 +428,74 @@ def show_event_workspace(eid, get_data, db):
             st.caption("Only Admins can modify the roster.")
 
 # ==========================================
-    # 💰 TAB 5: SALES (Complete Schema-Aligned)
+    # 💰 TAB 5: SALES (Final KeyError Fix)
     # ==========================================
     with tab_sales:
-        # 1. FETCH DATA
         @st.cache_data(ttl=600)
         def get_sales_data():
-            # Matches your SQL table name 'public.event_sales'
             return db.read_table("event_sales")
 
-        # Fetch Master Events to get Venue and Multi-day status
         df_master_events = get_data("Events") 
         df_sales_dest = get_sales_data()
 
-        # Safety Check for Master Data
-        if df_master_events.empty:
-            st.error("⚠️ Master Event list is empty. Please check the 'Events' table.")
+        # --- 🛡️ THE FIX: Force Case-Insensitivity ---
+        if not df_sales_dest.empty:
+            # Force all column names to lowercase to match your SQL schema
+            df_sales_dest.columns = [str(c).lower().strip() for c in df_sales_dest.columns]
+        else:
+            # Fallback for empty table so the app doesn't crash
+            df_sales_dest = pd.DataFrame(columns=['event_id', 'total_revenue', 'card_sales', 'cash_sales', 'created_at'])
+
+        # Safety Check: Ensure 'event_id' actually exists now
+        if 'event_id' not in df_sales_dest.columns:
+            st.error(f"🚨 Table 'event_sales' found, but column 'event_id' is missing. Columns: {list(df_sales_dest.columns)}")
             st.stop()
 
-        # Extract Event Info (PascalCase matches your Events master sheet)
+        # Fetch Event Info from Master
         event_match = df_master_events[df_master_events['Event_ID'] == eid]
-        if not event_match.empty:
-            venue_name = event_match.iloc[0]['Venue']
-            is_multi = str(event_match.iloc[0].get('Is_Multi_Day', 'No')) == "Yes"
-        else:
-            venue_name = "Unknown Venue"
-            is_multi = False
-
-        # METRICS (Mapped to lowercase snake_case from your SQL schema)
-        day_total = 0.0
-        if not df_sales_dest.empty:
-            # Ensure column names are clean
-            df_sales_dest.columns = [str(c).strip() for c in df_sales_dest.columns]
-            # Filter by event_id (SQL schema name)
-            day_total = df_sales_dest[df_sales_dest['event_id'] == str(eid)]['total_revenue'].sum()
+        venue_name = event_match.iloc[0]['Venue'] if not event_match.empty else "Unknown"
+        
+        # METRICS
+        day_total = df_sales_dest[df_sales_dest['event_id'] == str(eid)]['total_revenue'].sum()
         
         m_col1, m_col2 = st.columns(2)
         m_col1.metric("Today's Gross", f"${day_total:,.2f}")
-        if is_multi:
-            # Multi-day total (sum of all sales for this event_id)
-            m_col2.metric("Event Total Revenue", f"${day_total:,.2f}")
         
         st.divider()
 
-        # 2. FORM STATE MANAGEMENT
-        if "form_id" not in st.session_state: 
-            st.session_state.form_id = 0
+        # --- REST OF THE TAB (FORM & FRAGMENT) ---
+        if "form_id" not in st.session_state: st.session_state.form_id = 0
 
-        # 3. THE SALES ENTRY FRAGMENT
         @st.fragment
         def render_sales_form():
             st.subheader(f"📝 Sales Entry: {selected_report_date.strftime('%d/%m/%Y')}")
             fid = st.session_state.form_id
             
-            # --- STEP 1: INPUTS ---
-            st.markdown("#### 1. Shift Floats")
-            f1, f2 = st.columns(2)
-            v_open = f1.number_input("Opening Float", min_value=0.0, step=10.0, key=f"open_{fid}")
-            v_close = f2.number_input("Closing Float", min_value=0.0, step=10.0, key=f"close_{fid}")
+            with st.container(border=True):
+                p1, p2 = st.columns(2)
+                v_card = p1.number_input("Card Sales", min_value=0.0, step=1.0, key=f"card_{fid}")
+                v_cash = p2.number_input("Cash Sales", min_value=0.0, step=1.0, key=f"cash_{fid}")
+                
+                t_rev = v_card + v_cash
+                st.markdown(f"### Total: :green[${t_rev:,.2f}]")
 
-            st.markdown("#### 2. Payment Breakdown")
-            p1, p2 = st.columns(2)
-            v_card = p1.number_input("Card / Eftpos (card_sales)", min_value=0.0, step=1.0, key=f"card_{fid}")
-            v_cash = p2.number_input("Cash Sales (cash_sales)", min_value=0.0, step=1.0, key=f"cash_{fid}")
-            
-            # Auto-calculate total revenue
-            t_revenue = v_card + v_cash
-            st.markdown(f"### Total Revenue: :green[${t_revenue:,.2f}]")
-            
-            st.divider()
-
-            # --- STEP 2: SAVE TO SUPABASE ---
-            if t_revenue > 0:
-                if st.button("💾 Save Sales Record", use_container_width=True, type="primary"):
-                    # This dictionary matches your SQL CREATE TABLE schema exactly
-                    new_sales_row = {
-                        "event_id": str(eid), 
-                        "opening_float": float(v_open),
-                        "cash_sales": float(v_cash),
-                        "card_sales": float(v_card),
-                        "closing_float": float(v_close),
-                        "total_revenue": float(t_revenue)
-                    }
-                    
-                    try:
-                        if db.insert_row("event_sales", new_sales_row):
-                            # Increment form_id to clear inputs
+                if t_rev > 0:
+                    if st.button("💾 Save to Supabase", use_container_width=True, type="primary"):
+                        new_row = {
+                            "event_id": str(eid),
+                            "card_sales": float(v_card),
+                            "cash_sales": float(v_cash),
+                            "total_revenue": float(t_rev),
+                            "opening_float": 0.0,
+                            "closing_float": 0.0
+                        }
+                        if db.insert_row("event_sales", new_row):
                             st.session_state.form_id += 1
-                            st.cache_data.clear() 
-                            st.success("✅ Sales Record Saved Successfully!")
-                            time.sleep(1)
-                            st.rerun() 
-                        else:
-                            st.error("Failed to insert record into Supabase.")
-                    except Exception as e:
-                        st.error(f"Database Error: {e}")
-            else:
-                st.info("Enter sales figures to enable saving.")
+                            st.cache_data.clear()
+                            st.success("Saved!")
+                            st.rerun()
 
-        # 4. EXECUTE FORM
-        render_sales_form()
-
-        # 5. VIEW HISTORY (Optional convenience)
-        if not df_sales_dest.empty:
-            with st.expander("📊 View Recent Sales Records"):
-                history = df_sales_dest[df_sales_dest['event_id'] == str(eid)].sort_values('created_at', ascending=False)
-                st.dataframe(history[['created_at', 'card_sales', 'cash_sales', 'total_revenue']], use_container_width=True) 
+        render_sales_form() 
 # # ==========================================
   #   # 💰 TAB 5: SALES (Schema Aligned)
   #   # ==========================================
