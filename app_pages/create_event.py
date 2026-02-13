@@ -122,11 +122,19 @@ def show_create_event(get_data, conn):
                         "Pref_Method": pref_contact 
                     }
 
+                    # # APPEND DATA
+                    # conn.update(worksheet="Events", data=pd.concat([get_data("Events"), pd.DataFrame([row_event])], ignore_index=True))
+                    # conn.update(worksheet="Event_Financials", data=pd.concat([get_data("Event_Financials"), pd.DataFrame([row_finance])], ignore_index=True))
+                    # conn.update(worksheet="Logistics_Details", data=pd.concat([get_data("Logistics_Details"), pd.DataFrame([row_logistics])], ignore_index=True))
+                    # conn.update(worksheet="Event_Contacts", data=pd.concat([get_data("Event_Contacts"), pd.DataFrame([row_contact])], ignore_index=True))
+                    ##### new supabse code #######
                     # APPEND DATA
-                    conn.update(worksheet="Events", data=pd.concat([get_data("Events"), pd.DataFrame([row_event])], ignore_index=True))
-                    conn.update(worksheet="Event_Financials", data=pd.concat([get_data("Event_Financials"), pd.DataFrame([row_finance])], ignore_index=True))
-                    conn.update(worksheet="Logistics_Details", data=pd.concat([get_data("Logistics_Details"), pd.DataFrame([row_logistics])], ignore_index=True))
-                    conn.update(worksheet="Event_Contacts", data=pd.concat([get_data("Event_Contacts"), pd.DataFrame([row_contact])], ignore_index=True))
+                    db.update_table("Events", pd.concat([get_data("Events"), pd.DataFrame([row_event])], ignore_index=True))
+                    db.update_table("Event_Financials", pd.concat([get_data("Event_Financials"), pd.DataFrame([row_finance])], ignore_index=True))
+                    db.update_table("Logistics_Details", pd.concat([get_data("Logistics_Details"), pd.DataFrame([row_logistics])], ignore_index=True))
+                    db.update_table("Event_Contacts", pd.concat([get_data("Event_Contacts"), pd.DataFrame([row_contact])], ignore_index=True))
+                    ##### new supabase code end #####
+
 
                     status.update(label="✅ Success!", state="complete")
                     st.balloons()
