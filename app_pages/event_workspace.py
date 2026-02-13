@@ -426,9 +426,8 @@ def show_event_workspace(eid, get_data, db):
                                 st.rerun()
         else:
             st.caption("Only Admins can modify the roster.")
-
 # ==========================================
-    # 💰 TAB 5: SALES (Final KeyError Fix)
+    # 💰 TAB 5: SALES (Full Logic + Supabase)
     # ==========================================
     with tab_sales:
         @st.cache_data(ttl=600)
@@ -438,64 +437,171 @@ def show_event_workspace(eid, get_data, db):
         df_master_events = get_data("Events") 
         df_sales_dest = get_sales_data()
 
-        # --- 🛡️ THE FIX: Force Case-Insensitivity ---
+        # Force column lowercase for reliability
         if not df_sales_dest.empty:
-            # Force all column names to lowercase to match your SQL schema
             df_sales_dest.columns = [str(c).lower().strip() for c in df_sales_dest.columns]
         else:
-            # Fallback for empty table so the app doesn't crash
-            df_sales_dest = pd.DataFrame(columns=['event_id', 'total_revenue', 'card_sales', 'cash_sales', 'created_at'])
+            df_sales_dest = pd.DataFrame(columns=['event_id', 'total_revenue', 'card_sales', 'cash_sales'])
 
-        # Safety Check: Ensure 'event_id' actually exists now
-        if 'event_id' not in df_sales_dest.columns:
-            st.error(f"🚨 Table 'event_sales' found, but column 'event_id' is missing. Columns: {list(df_sales_dest.columns)}")
-            st.stop()
-
-        # Fetch Event Info from Master
-        event_match = df_master_events[df_master_events['Event_ID'] == eid]
-        venue_name = event_match.iloc[0]['Venue'] if not event_match.empty else "Unknown"
+        # Get Event Info for Metrics
+        event_info = df_master_events[df_master_events['Event_ID'] == eid]
+        venue_name = event_info.iloc[0]['Venue'] if not event_info.empty else "Unknown"
+        is_multi = str(event_info.iloc[0].get('Is_Multi_Day', 'No')) == "Yes"
         
         # METRICS
         day_total = df_sales_dest[df_sales_dest['event_id'] == str(eid)]['total_revenue'].sum()
         
         m_col1, m_col2 = st.columns(2)
         m_col1.metric("Today's Gross", f"${day_total:,.2f}")
+        if is_multi:
+            # Shows total for this venue across all dates
+            m_col2.metric("Total for Venue", f"${day_total:,.2f}")
         
         st.divider()
 
-        # --- REST OF THE TAB (FORM & FRAGMENT) ---
+        # --- FORM STATE ---
         if "form_id" not in st.session_state: st.session_state.form_id = 0
+        if "fill_val" not in st.session_state: st.session_state.fill_val = 0.0
 
+        # --- THE FRAGMENT ---
         @st.fragment
         def render_sales_form():
             st.subheader(f"📝 Sales Entry: {selected_report_date.strftime('%d/%m/%Y')}")
             fid = st.session_state.form_id
             
-            with st.container(border=True):
-                p1, p2 = st.columns(2)
-                v_card = p1.number_input("Card Sales", min_value=0.0, step=1.0, key=f"card_{fid}")
-                v_cash = p2.number_input("Cash Sales", min_value=0.0, step=1.0, key=f"cash_{fid}")
-                
-                t_rev = v_card + v_cash
-                st.markdown(f"### Total: :green[${t_rev:,.2f}]")
+            # 1. TOTAL PAYMENTS
+            st.markdown("#### 1. Total Payments")
+            p1, p2 = st.columns(2)
+            v_card = p1.number_input("Card / Eftpos", min_value=0.0, step=1.0, key=f"eftpos_{fid}")
+            v_cash = p2.number_input("Cash", min_value=0.0, step=1.0, key=f"cash_{fid}")
+            
+            t_gross = v_card + v_cash
+            st.markdown(f"### Gross Total: :green[${t_gross:,.2f}]")
+            st.divider()
+            
+            # 2. CATEGORY INPUTS
+            st.markdown("#### 2. Categories")
+            c1, c2, c3, c4 = st.columns(4)
+            v_quick = c1.number_input("Quick", min_value=0.0, step=1.0, key=f"quick_{fid}")
+            v_food = c2.number_input("Food", min_value=0.0, step=1.0, key=f"food_{fid}")
+            v_drinks = c3.number_input("Drinks", min_value=0.0, step=1.0, key=f"drinks_{fid}")
+            v_uncat = c4.number_input("Uncategorised", min_value=0.0, step=1.0, value=st.session_state.fill_val, key=f"uncat_{fid}")
+            
+            st.session_state.fill_val = v_uncat
 
-                if t_rev > 0:
-                    if st.button("💾 Save to Supabase", use_container_width=True, type="primary"):
-                        new_row = {
-                            "event_id": str(eid),
-                            "card_sales": float(v_card),
-                            "cash_sales": float(v_cash),
-                            "total_revenue": float(t_rev),
-                            "opening_float": 0.0,
-                            "closing_float": 0.0
-                        }
+            # 3. BALANCING LOGIC
+            cat_sum = v_quick + v_food + v_drinks + v_uncat
+            diff = t_gross - cat_sum
+            
+            st.divider()
+            
+            if abs(diff) > 0.01:
+                b_col1, b_col2 = st.columns([2, 1])
+                b_col1.warning(f"⚠️ **Remaining to balance: ${diff:,.2f}**")
+                if diff > 0:
+                    if b_col2.button(f"Auto-Fill ${diff:,.0f}", use_container_width=True):
+                        st.session_state.fill_val = float(v_uncat + diff)
+                        st.rerun(scope="fragment")
+            else:
+                st.success("✅ Totals Balance Perfectly!")
+
+            # 4. SAVE LOGIC
+            if round(t_gross, 2) == round(cat_sum, 2) and t_gross > 0:
+                if st.button("💾 Save Sales Record", use_container_width=True, type="primary"):
+                    new_row = {
+                        "event_id": str(eid),
+                        "card_sales": float(v_card),
+                        "cash_sales": float(v_cash),
+                        "total_revenue": float(t_gross),
+                        "opening_float": 0.0, # Adjust if you want to add float inputs
+                        "closing_float": 0.0
+                    }
+                    
+                    # NOTE: If your Supabase has columns for Quick/Food/Drinks, 
+                    # add them to the dictionary above!
+                    
+                    try:
                         if db.insert_row("event_sales", new_row):
                             st.session_state.form_id += 1
-                            st.cache_data.clear()
-                            st.success("Saved!")
-                            st.rerun()
+                            st.session_state.fill_val = 0.0
+                            st.cache_data.clear() 
+                            st.success("✅ Saved!")
+                            time.sleep(1)
+                            st.rerun() 
+                    except Exception as e:
+                        st.error(f"Error: {e}")
 
-        render_sales_form() 
+        # EXECUTE
+        render_sales_form()
+# # ==========================================
+#     # 💰 TAB 5: SALES (Final KeyError Fix)
+#     # ==========================================
+#     with tab_sales:
+#         @st.cache_data(ttl=600)
+#         def get_sales_data():
+#             return db.read_table("event_sales")
+
+#         df_master_events = get_data("Events") 
+#         df_sales_dest = get_sales_data()
+
+#         # --- 🛡️ THE FIX: Force Case-Insensitivity ---
+#         if not df_sales_dest.empty:
+#             # Force all column names to lowercase to match your SQL schema
+#             df_sales_dest.columns = [str(c).lower().strip() for c in df_sales_dest.columns]
+#         else:
+#             # Fallback for empty table so the app doesn't crash
+#             df_sales_dest = pd.DataFrame(columns=['event_id', 'total_revenue', 'card_sales', 'cash_sales', 'created_at'])
+
+#         # Safety Check: Ensure 'event_id' actually exists now
+#         if 'event_id' not in df_sales_dest.columns:
+#             st.error(f"🚨 Table 'event_sales' found, but column 'event_id' is missing. Columns: {list(df_sales_dest.columns)}")
+#             st.stop()
+
+#         # Fetch Event Info from Master
+#         event_match = df_master_events[df_master_events['Event_ID'] == eid]
+#         venue_name = event_match.iloc[0]['Venue'] if not event_match.empty else "Unknown"
+        
+#         # METRICS
+#         day_total = df_sales_dest[df_sales_dest['event_id'] == str(eid)]['total_revenue'].sum()
+        
+#         m_col1, m_col2 = st.columns(2)
+#         m_col1.metric("Today's Gross", f"${day_total:,.2f}")
+        
+#         st.divider()
+
+#         # --- REST OF THE TAB (FORM & FRAGMENT) ---
+#         if "form_id" not in st.session_state: st.session_state.form_id = 0
+
+#         @st.fragment
+#         def render_sales_form():
+#             st.subheader(f"📝 Sales Entry: {selected_report_date.strftime('%d/%m/%Y')}")
+#             fid = st.session_state.form_id
+            
+#             with st.container(border=True):
+#                 p1, p2 = st.columns(2)
+#                 v_card = p1.number_input("Card Sales", min_value=0.0, step=1.0, key=f"card_{fid}")
+#                 v_cash = p2.number_input("Cash Sales", min_value=0.0, step=1.0, key=f"cash_{fid}")
+                
+#                 t_rev = v_card + v_cash
+#                 st.markdown(f"### Total: :green[${t_rev:,.2f}]")
+
+#                 if t_rev > 0:
+#                     if st.button("💾 Save to Supabase", use_container_width=True, type="primary"):
+#                         new_row = {
+#                             "event_id": str(eid),
+#                             "card_sales": float(v_card),
+#                             "cash_sales": float(v_cash),
+#                             "total_revenue": float(t_rev),
+#                             "opening_float": 0.0,
+#                             "closing_float": 0.0
+#                         }
+#                         if db.insert_row("event_sales", new_row):
+#                             st.session_state.form_id += 1
+#                             st.cache_data.clear()
+#                             st.success("Saved!")
+#                             st.rerun()
+
+#         render_sales_form() 
 # # ==========================================
   #   # 💰 TAB 5: SALES (Schema Aligned)
   #   # ==========================================
