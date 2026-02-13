@@ -173,7 +173,7 @@ def show_event_workspace(eid, get_data, db):
         st.subheader("🚛 Logistics & Setup Details")
 
         # Use the name consistent with your database schema
-        df_log = get_data("Logistics")
+        df_log = get_data("logistics_details")
         
         if not df_log.empty and 'Event_ID' in df_log.columns:
             log_match = df_log[df_log['Event_ID'] == eid]
