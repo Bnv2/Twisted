@@ -59,17 +59,18 @@ def show_event_workspace(eid, get_data, db):
         "📊 Overview", "🚛 Logistics", "📝 Daily Report", "👥 Staffing", "💰 Sales"
     ])
     
-    # ==========================================
+   # ==========================================
     # 📊 TAB 1: OVERVIEW
     # ==========================================
     with tab_ov:
-        # 1. Define variables at the top to avoid NameErrors
+        # 1. Local Variables
         is_multi = str(event_core.get('Is_Multi_Day', 'No')) == "Yes"
         
         col_ov_h, col_ov_ed = st.columns([3, 1])
-        with col_ov_h: st.subheader("📍 Core Event Details")
+        with col_ov_h: 
+            st.subheader("📍 Core Event Details")
         
-        # 2. Access Check for the Toggle
+        # 2. Access Check
         edit_mode = False
         if is_adm:
             edit_mode = col_ov_ed.toggle("🔓 Edit Details", value=False)
@@ -84,7 +85,6 @@ def show_event_workspace(eid, get_data, db):
                 new_start = st.date_input("Start Date", value=start_dt.date(), disabled=not edit_mode)
                 new_multi = st.selectbox("Multi-Day Event?", ["Yes", "No"], 
                                          index=0 if is_multi else 1, disabled=not edit_mode)
-                # Logic: Only enabled if Admin toggles Edit AND selects Yes for Multi-Day
                 new_end = st.date_input("End Date", value=end_dt.date(), disabled=not (edit_mode and new_multi == "Yes"))
             with c2:
                 new_address = st.text_area("Event Address", value=str(event_core.get('Address', '')), disabled=not edit_mode, height=68)
@@ -93,25 +93,33 @@ def show_event_workspace(eid, get_data, db):
             
             new_notes = st.text_area("Internal Notes", value=str(event_core.get('Notes', '')), disabled=not edit_mode)
 
-            # --- 🛡️ SUBMIT BUTTON LOGIC (Fixes "Missing Submit Button") ---
-            # Button is always visible but only functional for Admin in edit mode
             save_btn = st.form_submit_button("💾 Save Core Changes", use_container_width=True, disabled=not edit_mode)
 
             if save_btn and edit_mode:
                 updated_row = event_core.to_dict()
                 updated_row.update({
-                    "Venue": new_venue, "Date": new_start.strftime('%d/%m/%Y'), "End_Date": new_end.strftime('%d/%m/%Y'),
-                    "Is_Multi_Day": new_multi, "Address": new_address, "Maps_Link": new_map, 
-                    "Organiser_Name": new_org, "Notes": new_notes, "Last_Edited_By": st.session_state.get('user_name', 'Admin')
+                    "Venue": new_venue, 
+                    "Date": new_start.strftime('%d/%m/%Y'), 
+                    "End_Date": new_end.strftime('%d/%m/%Y'),
+                    "Is_Multi_Day": new_multi, 
+                    "Address": new_address, 
+                    "Maps_Link": new_map, 
+                    "Organiser_Name": new_org, 
+                    "Notes": new_notes, 
+                    "Last_Edited_By": st.session_state.get('user_name', 'Admin')
                 })
-                df_events = pd.concat([df_events[df_events['Event_ID'] != eid], pd.DataFrame([updated_row])], ignore_index=True)
-                conn.update(worksheet="Events", data=df_events)
-                st.success("Details Updated!"); st.rerun()
+                
+                # SUPABASE MIGRATION: Replace conn.update with db.update_table
+                # We filter out the old row and add the updated one
+                df_events_updated = pd.concat([df_events[df_events['Event_ID'] != eid], pd.DataFrame([updated_row])], ignore_index=True)
+                
+                if db.update_table("Events", df_events_updated):
+                    st.success("Details Updated!")
+                    st.rerun()
 
         st.divider()
         st.subheader("👥 Event Contacts")
         
-        # Display existing contacts
         df_con = get_data("Event_Contacts")
         current_contacts = df_con[df_con['Event_ID'] == eid] if not df_con.empty else pd.DataFrame()
         
@@ -120,32 +128,27 @@ def show_event_workspace(eid, get_data, db):
                 with st.expander(f"{row['Role']}: {row['Name']}"):
                     st.write(f"📞 {row['Phone']} | 📧 {row['Email']}")
                     st.write(f"💬 Preferred: {row.get('Preferred_Method', 'Not Specified')}")
-                    # Only Admin can delete contacts
+                    
                     if is_adm and st.button("🗑️ Remove", key=f"del_{idx}"):
-                        conn.update(worksheet="Event_Contacts", data=df_con.drop(idx))
+                        # SUPABASE MIGRATION: Update table after dropping the contact row
+                        df_con_updated = df_con.drop(idx)
+                        db.update_table("Event_Contacts", df_con_updated)
                         st.rerun()
 
-        # --- 🛡️ ADD CONTACT WITH VALIDATION (COMPACT LAYOUT) ---
+        # --- ADD CONTACT WITH VALIDATION ---
         with st.popover("➕ Add New Contact", use_container_width=True):
             with st.form("add_contact_form", clear_on_submit=True):
-                # Row 1: Name and Role
                 r1c1, r1c2 = st.columns([2, 1])
                 c_name = r1c1.text_input("Full Name*")
                 c_role = r1c2.selectbox("Role", ["Site Manager", "Organizer", "Billing", "Electrician", "Security"])
                 
-                # Row 2: Phone and Email
                 r2c1, r2c2 = st.columns(2)
                 c_phone = r2c1.text_input("Phone Number*")
                 c_email = r2c2.text_input("Email Address*")
                 
-                # Row 3: Preferred Method and Submit
-                r3c1, r3c2 = st.columns([2, 1])
-                c_pref = r3c1.radio("Preferred Contact Method", ["Phone", "Email", "WhatsApp"], horizontal=True)
+                c_pref = st.radio("Preferred Contact Method", ["Phone", "Email", "WhatsApp"], horizontal=True)
                 
-                # Align button to bottom of the row
-                st.markdown("<br>", unsafe_allow_html=True)
                 if st.form_submit_button("💾 Save Contact", use_container_width=True):
-                    # Concise Validation
                     is_email = bool(re.match(r"[^@]+@[^@]+\.[^@]+", c_email))
                     is_phone = len(re.sub(r'\D', '', c_phone)) >= 10
                     
@@ -156,8 +159,10 @@ def show_event_workspace(eid, get_data, db):
                             "Event_ID": eid, "Name": c_name, "Phone": c_phone, 
                             "Email": c_email, "Role": c_role, "Preferred_Method": c_pref
                         }
-                        conn.update(worksheet="Event_Contacts", data=pd.concat([df_con, pd.DataFrame([new_c])], ignore_index=True))
-                        st.success(f"Added {c_name}!"); st.rerun()
+                        # SUPABASE MIGRATION: Using insert_row for new entries
+                        if db.insert_row("Event_Contacts", new_c):
+                            st.success(f"Added {c_name}!")
+                            st.rerun()
 
         render_mini_map(event_core.get('Address', ''))
 
