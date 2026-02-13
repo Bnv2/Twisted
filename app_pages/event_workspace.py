@@ -388,7 +388,7 @@ def show_event_workspace(eid, get_data, db): # Changed conn to db
     #             conn.update(worksheet="Logistics_Details", data=df_log)
     #             st.success("Logistics Updated!")
     #             st.rerun()
-    ### new code gemini 1 ###
+    ### new code gemini 2 ###
     # ==========================================
     # 🚛 TAB 2: LOGISTICS
     # ==========================================
@@ -396,7 +396,7 @@ def show_event_workspace(eid, get_data, db): # Changed conn to db
         st.subheader("🚛 Logistics & Setup Details")
 
         # Fetch data from Supabase
-        df_log = get_data("Logistics")
+        df_log = get_data("logistics_details")
         
         # Determine ID column (handling event_id vs Event_ID)
         id_col_log = 'event_id' if 'event_id' in df_log.columns else 'Event_ID'
@@ -456,13 +456,13 @@ def show_event_workspace(eid, get_data, db): # Changed conn to db
                 df_log = pd.concat([df_log, pd.DataFrame([new_log_data])], ignore_index=True)
                 
                 # SAVE TO SUPABASE (Targeting the 'Logistics' table)
-                db.update_table("Logistics", df_log)
+                db.update_table("logistics_details", df_log)
                 
                 st.success("Logistics Updated!")
                 time.sleep(0.5)
                 st.rerun()
 
-    ### end new code gemini 1 ###
+    ### end new code gemini 2 ###
     
 
     # # ==========================================
@@ -994,15 +994,32 @@ def show_event_workspace(eid, get_data, db): # Changed conn to db
     # ==========================================
     # 💰 TAB 5: SALES (Balanced Layout)
     # ==========================================
+    # with tab_sales:
+    #     # 1. FETCH DATA (Updated for Supabase)
+    #     @st.cache_data(ttl=600)
+    #     def get_sales_data():
+    #         # Use the db helper we imported
+    #         return db.get_table("Event_Sales")
+
+    #     df_master_events = get_data("Events") 
+    #     df_sales_dest = get_sales_data()
+    ### new code gemini 2 ###
+    # ==========================================
+    # 💰 TAB 5: SALES (Balanced Layout)
+    # ==========================================
     with tab_sales:
-        # 1. FETCH DATA (Updated for Supabase)
+        # 1. FETCH DATA - Pass 'db' as an argument so the cache can see it
         @st.cache_data(ttl=600)
-        def get_sales_data():
-            # Use the db helper we imported
-            return db.get_table("Event_Sales")
+        def get_sales_data(_db_connector):
+            # We use an underscore (_db_connector) so Streamlit doesn't 
+            # try to hash the database object for the cache key
+            return _db_connector.get_table("Event_Sales")
 
         df_master_events = get_data("Events") 
-        df_sales_dest = get_sales_data()
+        
+        # Pass the 'db' object into the function here
+        df_sales_dest = get_sales_data(db)
+    ### end new code gemini 2 ###
 
         # Handle column naming flexibility (event_id vs Event_ID)
         id_col = 'event_id' if 'event_id' in df_master_events.columns else 'Event_ID'
