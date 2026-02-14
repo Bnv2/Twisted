@@ -5,61 +5,68 @@ import pandas as pd
 import numpy as np
 import time
 
-def migrate_all_data():
-    db = get_supabase()
-    gsheets = st.connection("gsheets", type=GSheetsConnection)
-    
-    # Mapping sheet names to their Unique ID columns for conflict handling
-    sheets_config = {
-        "Staff": "email",
-        "Events": "event_id",
-        "Event_Financials": "id",
-        "Event_Contacts": "contact_id",
-        "Logistics_Details": "event_id",
-        "Event_Reports": "report_id",
-        "Event_Sales": "id",
-        "Event_Staffing": "id",
-        "Staff_Database": "email"
-    }
-    
-    for sheet_name, unique_key in sheets_config.items():
-        try:
-            print(f"📥 Processing {sheet_name}...")
-            df = gsheets.read(worksheet=sheet_name, ttl=0)
-            
-            if df is None or df.empty:
-                continue
+def migrate_ui():
+    st.title("🚀 Supabase Migration Tool")
+    st.info("This tool will pull data from Google Sheets and UPSERT it into Supabase.")
 
-            # Clean Data
-            df_cleaned = df.replace({np.nan: None, pd.NA: None, pd.NaT: None})
-            df_cleaned.columns = [c.lower().strip() for c in df_cleaned.columns]
-            
-            # AGGRESSIVE DATE FIX
-            for col in df_cleaned.columns:
-                if 'date' in col or 'created_at' in col:
-                    # Convert DD/MM/YYYY to YYYY-MM-DD
-                    df_cleaned[col] = pd.to_datetime(df_cleaned[col], dayfirst=True, errors='coerce').dt.strftime('%Y-%m-%d')
-                    df_cleaned[col] = df_cleaned[col].replace({'NaT': None, np.nan: None})
+    if st.button("Start Full Migration"):
+        db = get_supabase()
+        gsheets = st.connection("gsheets", type=GSheetsConnection)
+        
+        sheets_config = {
+            "Staff": "email",
+            "Events": "event_id",
+            "Event_Financials": "id",
+            "Event_Contacts": "contact_id",
+            "Logistics_Details": "event_id",
+            "Event_Reports": "report_id",
+            "Event_Sales": "id",
+            "Event_Staffing": "id",
+            "Staff_Database": "email"
+        }
 
-            data_dict = df_cleaned.to_dict(orient='records')
-            
-            # UPSERT with on_conflict
-            # This fixes the "Duplicate Key" error by updating the existing row
-            res = db.client.table(sheet_name.lower()).upsert(
-                data_dict, 
-                on_conflict=unique_key.lower()
-            ).execute()
-            
-            print(f"  ✅ Migrated {len(df_cleaned)} rows.")
-            
-            # Fix for Quota Exceeded: Wait 2 seconds between sheets
-            time.sleep(2)
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        log_area = st.container(border=True)
 
-        except Exception as e:
-            print(f"  ❌ Error: {e}")
+        for i, (sheet_name, unique_key) in enumerate(sheets_config.items()):
+            try:
+                status_text.text(f"Processing {sheet_name}...")
+                
+                # 1. Read
+                df = gsheets.read(worksheet=sheet_name, ttl=0)
+                
+                if df is not None and not df.empty:
+                    # 2. Clean
+                    df_cleaned = df.replace({np.nan: None, pd.NA: None, pd.NaT: None})
+                    df_cleaned.columns = [c.lower().strip() for c in df_cleaned.columns]
+                    
+                    # 3. Fix Dates
+                    for col in df_cleaned.columns:
+                        if 'date' in col or 'created_at' in col:
+                            df_cleaned[col] = pd.to_datetime(df_cleaned[col], dayfirst=True, errors='coerce').dt.strftime('%Y-%m-%d')
+                            df_cleaned[col] = df_cleaned[col].replace({'NaT': None, np.nan: None})
+
+                    # 4. Push
+                    data_dict = df_cleaned.to_dict(orient='records')
+                    db.client.table(sheet_name.lower()).upsert(data_dict, on_conflict=unique_key.lower()).execute()
+                    
+                    log_area.success(f"✅ {sheet_name}: Migrated {len(df_cleaned)} rows.")
+                else:
+                    log_area.warning(f"⚠️ {sheet_name}: Sheet is empty.")
+
+                # Update Progress
+                progress_bar.progress((i + 1) / len(sheets_config))
+                time.sleep(1) # Breath for the API
+
+            except Exception as e:
+                log_area.error(f"❌ {sheet_name}: {str(e)}")
+
+        st.balloons()
+        st.success("Migration Process Finished!")
 
 if __name__ == "__main__":
-    migrate_all_data()
+    migrate_ui()
 
 
 
