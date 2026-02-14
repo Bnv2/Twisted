@@ -23,7 +23,7 @@ def render_overview_tab(eid, event_core, df_events, db, get_data, is_adm):
 
     with col_ov_act:
         # Permission-based Edit Toggle (Default: False)
-        edit_mode = st.toggle("🔓 Edit Details", value=False) if is_adm else False
+        edit_mode = st.toggle("🔓 Edit Details", value=True) if is_adm else False
         
         with st.popover("➕ Add Contact", use_container_width=True):
             with st.form("add_contact_form", clear_on_submit=True):
