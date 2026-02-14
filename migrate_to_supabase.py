@@ -4,18 +4,19 @@ from modules.supabase_db import get_supabase
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
+import numpy as np
 
 def migrate_all_data():
-    """One-time migration from Google Sheets to Supabase"""
+    """One-time migration from Google Sheets to Supabase with Data Cleaning"""
     
-    print("🚀 Starting migration to Supabase...")
+    print("🚀 Starting robust migration to Supabase...")
     print(f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     
     # Connect to both
     gsheets = st.connection("gsheets", type=GSheetsConnection)
-    supabase = get_supabase()
+    db = get_supabase() # Assuming this returns your wrapper with the .client
     
-    # Your 10 tables
+    # Table names - adjusted to lowercase to match standard SQL schema
     sheets = [
         "Staff",
         "Events",
@@ -29,7 +30,6 @@ def migrate_all_data():
         "Staff_Database"
     ]
     
-    # Create backup directory
     backup_dir = Path("data/backups")
     backup_dir.mkdir(parents=True, exist_ok=True)
     
@@ -40,29 +40,47 @@ def migrate_all_data():
         try:
             print(f"📥 Processing {sheet_name}...")
             
-            # Read from Google Sheets
+            # 1. Read from Google Sheets
             df = gsheets.read(worksheet=sheet_name, ttl=0)
             
-            if df.empty:
-                print(f"  ⚠️  {sheet_name} is empty, skipping...\n")
+            if df is None or df.empty:
+                print(f"  ⚠️  {sheet_name} is empty or not found, skipping...\n")
                 continue
             
-            # Backup to CSV
+            # 2. CLEANING: Replace NaN/NAT with None (JSON compliant)
+            # This fixes the "Out of range float values" error
+            df_cleaned = df.replace({np.nan: None, pd.NA: None, pd.NaT: None})
+            
+            # 3. STANDARDIZE: Lowercase columns to match Supabase schema
+            # This fixes the "Could not find column 'Cash'" error
+            df_cleaned.columns = [c.lower().strip() for c in df_cleaned.columns]
+            
+            # 4. DATES: Ensure Date columns are in YYYY-MM-DD string format
+            date_cols = ['date', 'end_date', 'created_at', 'updated_at']
+            for col in date_cols:
+                if col in df_cleaned.columns:
+                    df_cleaned[col] = pd.to_datetime(df_cleaned[col], errors='coerce').dt.strftime('%Y-%m-%d')
+                    # Replace any failed parses (NaN) back to None
+                    df_cleaned[col] = df_cleaned[col].replace({np.nan: None})
+
+            # 5. BACKUP
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             csv_path = backup_dir / f"{sheet_name}_{timestamp}.csv"
-            df.to_csv(csv_path, index=False)
-            print(f"  💾 Backed up to {csv_path}")
+            df_cleaned.to_csv(csv_path, index=False)
             
-            # Write to Supabase
-            if supabase.update_table(sheet_name, df):
-                print(f"  ✅ Migrated {len(df)} rows to Supabase")
-                successful += 1
-            else:
-                print(f"  ❌ Failed to migrate {sheet_name}")
-                failed += 1
+            # 6. UPSERT TO SUPABASE
+            # Use .upsert() so it updates existing and adds missing without deleting the table
+            data_dict = df_cleaned.to_dict(orient='records')
             
-            print()  # Blank line
+            # Target table name in lowercase
+            target_table = sheet_name.lower()
             
+            res = db.client.table(target_table).upsert(data_dict).execute()
+            
+            print(f"  ✅ Migrated {len(df_cleaned)} rows to {target_table}")
+            successful += 1
+            print() 
+
         except Exception as e:
             print(f"  ❌ Error with {sheet_name}: {e}\n")
             failed += 1
@@ -71,12 +89,19 @@ def migrate_all_data():
     print(f"🎉 Migration Complete!")
     print(f"✅ Successful: {successful}/{len(sheets)}")
     print(f"❌ Failed: {failed}/{len(sheets)}")
-    print(f"💾 Backups saved to: {backup_dir}")
     print("=" * 50)
 
 if __name__ == "__main__":
     migrate_all_data()
-    
+
+
+
+
+
+
+
+
+
 # import streamlit as st
 # from streamlit_gsheets import GSheetsConnection
 # from modules.supabase_db import get_supabase
