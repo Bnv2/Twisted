@@ -1,3 +1,99 @@
+import streamlit as st
+import pandas as pd
+import re
+from modules.ui_utils import render_mini_map
+
+def render_overview_tab(eid, event_core, df_events, db, get_data, is_adm):
+    # --- 1. SETUP & DATA PARSING ---
+    is_multi_db = str(event_core.get('Is_Multi_Day', 'No')) == "Yes"
+    
+    try:
+        start_dt = pd.to_datetime(event_core['Date'], dayfirst=True).date()
+        end_val = event_core.get('End_Date')
+        end_dt = pd.to_datetime(end_val, dayfirst=True).date() if pd.notna(end_val) else start_dt
+    except:
+        from datetime import datetime
+        start_dt = end_dt = datetime.now().date()
+
+    # --- 2. HEADER & CONTROL ROW ---
+    col_h, col_edit = st.columns([3, 1])
+    with col_h:
+        st.subheader(f"📍 {event_core['Venue']} Dashboard")
+    with col_edit:
+        edit_mode = st.toggle("🔓 Edit Mode", value=False) if is_adm else False
+
+    # --- 3. THE SPLIT DASHBOARD ---
+    # We use a slightly different ratio to give the map more breathing room
+    col_form, col_map = st.columns([1.6, 1.4], gap="medium")
+
+    # --- LEFT COLUMN: CORE DATA ---
+    with col_form:
+        with st.container(border=True):
+            if edit_mode:
+                is_multi = st.checkbox("Multi-Day Event", value=is_multi_db)
+            else:
+                is_multi = is_multi_db
+                st.caption("📅 Multi-Day Event" if is_multi else "⏱️ Single Day Event")
+
+            with st.form("overview_form_master", border=False):
+                d1, d2 = st.columns(2)
+                new_start = d1.date_input("Start Date", value=start_dt, disabled=not edit_mode)
+                new_end = d2.date_input("End Date", value=end_dt, disabled=not (edit_mode and is_multi))
+
+                v1, v2 = st.columns(2)
+                new_venue = v1.text_input("Venue Name", value=event_core['Venue'], disabled=not edit_mode)
+                new_org = v2.text_input("Organiser", value=str(event_core.get('Organiser_Name', '')), disabled=not edit_mode)
+
+                new_address = st.text_area("Address", value=str(event_core.get('Address', '')), disabled=not edit_mode, height=100)
+                new_notes = st.text_area("Internal Notes", value=str(event_core.get('Notes', '')), disabled=not edit_mode, height=115)
+
+                if st.form_submit_button("💾 Save Changes", use_container_width=True, disabled=not edit_mode):
+                    updated_data = {
+                        "Venue": new_venue, "Date": new_start.strftime('%d/%m/%Y'), 
+                        "End_Date": new_end.strftime('%d/%m/%Y'), "Is_Multi_Day": "Yes" if is_multi else "No", 
+                        "Address": new_address, "Organiser_Name": new_org, "Notes": new_notes
+                    }
+                    if db.update_row("Events", {"Event_ID": eid}, updated_data):
+                        st.success("Saved!"); st.cache_data.clear(); st.rerun()
+
+    # --- RIGHT COLUMN: MAP (MAX HEIGHT) & CONTACTS (ANCHORED) ---
+    with col_map:
+        # We wrap the map in a fixed-height container or just let it expand
+        # Using a container with border to match the left side
+        with st.container(border=True):
+            st.caption("🗺️ Interactive Site Map")
+            # Ensure your render_mini_map function can handle a height parameter if possible
+            render_mini_map(event_core.get('Address', ''), height=400) 
+            
+            st.markdown("<div style='margin-top: 18px;'></div>", unsafe_allow_html=True)
+            
+            # This popover is now visually "anchored" to the bottom of the right frame
+            with st.popover("👥 Manage Event Contacts", use_container_width=True):
+                # Contact management logic remains same
+                with st.form("quick_add_contact"):
+                    st.write("**Quick Add Contact**")
+                    c_name = st.text_input("Name")
+                    c_role = st.selectbox("Role", ["Manager", "Organizer", "Billing", "Staff"])
+                    if st.form_submit_button("Save Contact", use_container_width=True):
+                        if c_name:
+                            new_c = {"Event_ID": eid, "Name": c_name, "Role": c_role}
+                            if db.insert_row("Event_Contacts", new_c):
+                                st.cache_data.clear(); st.rerun()
+                
+                st.divider()
+                df_con = get_data("Event_Contacts")
+                current_contacts = df_con[df_con['Event_ID'].astype(str) == str(eid)] if not df_con.empty else pd.DataFrame()
+                for _, row in current_contacts.iterrows():
+                    st.caption(f"**{row['Role']}**: {row['Name']} ({row.get('Phone', 'No PH')})")
+
+
+
+
+
+
+
+
+
 # import streamlit as st
 # import pandas as pd
 # import re
@@ -108,102 +204,102 @@
 
 
 
-import streamlit as st
-import pandas as pd
-import re
-from modules.ui_utils import render_mini_map
+# import streamlit as st
+# import pandas as pd
+# import re
+# from modules.ui_utils import render_mini_map
 
-def render_overview_tab(eid, event_core, df_events, db, get_data, is_adm):
-    # --- 1. SETUP & DATA PARSING ---
-    is_multi_db = str(event_core.get('Is_Multi_Day', 'No')) == "Yes"
+# def render_overview_tab(eid, event_core, df_events, db, get_data, is_adm):
+#     # --- 1. SETUP & DATA PARSING ---
+#     is_multi_db = str(event_core.get('Is_Multi_Day', 'No')) == "Yes"
     
-    try:
-        start_dt = pd.to_datetime(event_core['Date'], dayfirst=True).date()
-        end_val = event_core.get('End_Date')
-        end_dt = pd.to_datetime(end_val, dayfirst=True).date() if pd.notna(end_val) else start_dt
-    except:
-        from datetime import datetime
-        start_dt = end_dt = datetime.now().date()
+#     try:
+#         start_dt = pd.to_datetime(event_core['Date'], dayfirst=True).date()
+#         end_val = event_core.get('End_Date')
+#         end_dt = pd.to_datetime(end_val, dayfirst=True).date() if pd.notna(end_val) else start_dt
+#     except:
+#         from datetime import datetime
+#         start_dt = end_dt = datetime.now().date()
 
-    # --- 2. HEADER & CONTROL ROW ---
-    col_h, col_edit = st.columns([3, 1])
-    with col_h:
-        st.subheader(f"📍 {event_core['Venue']} Details")
-    with col_edit:
-        # Locked by default
-        edit_mode = st.toggle("🔓 Edit Mode", value=False) if is_adm else False
+#     # --- 2. HEADER & CONTROL ROW ---
+#     col_h, col_edit = st.columns([3, 1])
+#     with col_h:
+#         st.subheader(f"📍 {event_core['Venue']} Details")
+#     with col_edit:
+#         # Locked by default
+#         edit_mode = st.toggle("🔓 Edit Mode", value=False) if is_adm else False
 
-    # --- 3. MAIN DASHBOARD LAYOUT (Side-by-Side) ---
-    col_form, col_map = st.columns([1.8, 1.2], gap="medium")
+#     # --- 3. MAIN DASHBOARD LAYOUT (Side-by-Side) ---
+#     col_form, col_map = st.columns([1.8, 1.2], gap="medium")
 
-    # --- LEFT COLUMN: THE DATA FORM ---
-    with col_form:
-        with st.container(border=True):
-            # Reactive Checkbox (Only if editing)
-            if edit_mode:
-                is_multi = st.checkbox("Multi-Day Event", value=is_multi_db)
-            else:
-                is_multi = is_multi_db
-                if not is_multi: st.caption("⏱️ Single Day Event")
+#     # --- LEFT COLUMN: THE DATA FORM ---
+#     with col_form:
+#         with st.container(border=True):
+#             # Reactive Checkbox (Only if editing)
+#             if edit_mode:
+#                 is_multi = st.checkbox("Multi-Day Event", value=is_multi_db)
+#             else:
+#                 is_multi = is_multi_db
+#                 if not is_multi: st.caption("⏱️ Single Day Event")
 
-            with st.form("overview_form_master", border=False):
-                # Row 1: Dates
-                d1, d2 = st.columns(2)
-                new_start = d1.date_input("Start Date", value=start_dt, disabled=not edit_mode)
-                new_end = d2.date_input("End Date", value=end_dt, disabled=not (edit_mode and is_multi))
+#             with st.form("overview_form_master", border=False):
+#                 # Row 1: Dates
+#                 d1, d2 = st.columns(2)
+#                 new_start = d1.date_input("Start Date", value=start_dt, disabled=not edit_mode)
+#                 new_end = d2.date_input("End Date", value=end_dt, disabled=not (edit_mode and is_multi))
 
-                # Row 2: Venue & Organiser
-                v1, v2 = st.columns(2)
-                new_venue = v1.text_input("Venue Name", value=event_core['Venue'], disabled=not edit_mode)
-                new_org = v2.text_input("Organiser", value=str(event_core.get('Organiser_Name', '')), disabled=not edit_mode)
+#                 # Row 2: Venue & Organiser
+#                 v1, v2 = st.columns(2)
+#                 new_venue = v1.text_input("Venue Name", value=event_core['Venue'], disabled=not edit_mode)
+#                 new_org = v2.text_input("Organiser", value=str(event_core.get('Organiser_Name', '')), disabled=not edit_mode)
 
-                # Row 3: Address & Notes
-                new_address = st.text_area("Address", value=str(event_core.get('Address', '')), disabled=not edit_mode, height=90)
-                new_notes = st.text_area("Internal Notes", value=str(event_core.get('Notes', '')), disabled=not edit_mode, height=90)
+#                 # Row 3: Address & Notes
+#                 new_address = st.text_area("Address", value=str(event_core.get('Address', '')), disabled=not edit_mode, height=90)
+#                 new_notes = st.text_area("Internal Notes", value=str(event_core.get('Notes', '')), disabled=not edit_mode, height=90)
 
-                # Save Button
-                save_btn = st.form_submit_button("💾 Save Changes", use_container_width=True, disabled=not edit_mode)
+#                 # Save Button
+#                 save_btn = st.form_submit_button("💾 Save Changes", use_container_width=True, disabled=not edit_mode)
                 
-                if save_btn:
-                    updated_data = {
-                        "Venue": new_venue, 
-                        "Date": new_start.strftime('%d/%m/%Y'), 
-                        "End_Date": new_end.strftime('%d/%m/%Y'), 
-                        "Is_Multi_Day": "Yes" if is_multi else "No", 
-                        "Address": new_address, 
-                        "Organiser_Name": new_org, 
-                        "Notes": new_notes
-                    }
-                    if db.update_row("Events", {"Event_ID": eid}, updated_data):
-                        st.success("Saved!"); st.cache_data.clear(); st.rerun()
+#                 if save_btn:
+#                     updated_data = {
+#                         "Venue": new_venue, 
+#                         "Date": new_start.strftime('%d/%m/%Y'), 
+#                         "End_Date": new_end.strftime('%d/%m/%Y'), 
+#                         "Is_Multi_Day": "Yes" if is_multi else "No", 
+#                         "Address": new_address, 
+#                         "Organiser_Name": new_org, 
+#                         "Notes": new_notes
+#                     }
+#                     if db.update_row("Events", {"Event_ID": eid}, updated_data):
+#                         st.success("Saved!"); st.cache_data.clear(); st.rerun()
 
-    # --- RIGHT COLUMN: MAP & CONTACTS ---
-    with col_map:
-        # Render the map in its own frame
-        with st.container(border=True):
-            st.caption("🗺️ Event Location")
-            render_mini_map(event_core.get('Address', ''))
+#     # --- RIGHT COLUMN: MAP & CONTACTS ---
+#     with col_map:
+#         # Render the map in its own frame
+#         with st.container(border=True):
+#             st.caption("🗺️ Event Location")
+#             render_mini_map(event_core.get('Address', ''))
         
-        # Contacts Popover moved here to keep header clean
-        with st.popover("👤 Manage Contacts", use_container_width=True):
-            # Quick Add Form
-            with st.form("quick_add_contact"):
-                st.write("**Add Contact**")
-                c_name = st.text_input("Name")
-                c_role = st.selectbox("Role", ["Manager", "Organizer", "Billing", "Staff"])
-                c_ph = st.text_input("Phone")
-                if st.form_submit_button("Save Contact", use_container_width=True):
-                    if c_name:
-                        new_c = {"Event_ID": eid, "Name": c_name, "Phone": c_ph, "Role": c_role}
-                        if db.insert_row("Event_Contacts", new_c):
-                            st.cache_data.clear(); st.rerun()
+#         # Contacts Popover moved here to keep header clean
+#         with st.popover("👤 Manage Contacts", use_container_width=True):
+#             # Quick Add Form
+#             with st.form("quick_add_contact"):
+#                 st.write("**Add Contact**")
+#                 c_name = st.text_input("Name")
+#                 c_role = st.selectbox("Role", ["Manager", "Organizer", "Billing", "Staff"])
+#                 c_ph = st.text_input("Phone")
+#                 if st.form_submit_button("Save Contact", use_container_width=True):
+#                     if c_name:
+#                         new_c = {"Event_ID": eid, "Name": c_name, "Phone": c_ph, "Role": c_role}
+#                         if db.insert_row("Event_Contacts", new_c):
+#                             st.cache_data.clear(); st.rerun()
             
-            # Contact List (Mini List)
-            st.divider()
-            df_con = get_data("Event_Contacts")
-            current_contacts = df_con[df_con['Event_ID'].astype(str) == str(eid)] if not df_con.empty else pd.DataFrame()
-            for _, row in current_contacts.iterrows():
-                st.caption(f"**{row['Role']}**: {row['Name']} ({row.get('Phone', 'No PH')})")
+#             # Contact List (Mini List)
+#             st.divider()
+#             df_con = get_data("Event_Contacts")
+#             current_contacts = df_con[df_con['Event_ID'].astype(str) == str(eid)] if not df_con.empty else pd.DataFrame()
+#             for _, row in current_contacts.iterrows():
+#                 st.caption(f"**{row['Role']}**: {row['Name']} ({row.get('Phone', 'No PH')})")
 
 
 
