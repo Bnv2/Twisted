@@ -42,7 +42,7 @@ def render_overview_tab(eid, event_core, df_events, db, get_data, is_adm):
 
     # --- 3. PERMISSIONS & REACTIVE TOGGLES ---
     # We put the "Edit" and "Multi-Day" toggle OUTSIDE the form so they are reactive
-    edit_mode = False
+    edit_mode = True
     if is_adm:
         col_t1, col_t2 = st.columns(2)
         edit_mode = col_t1.toggle("🔓 Edit Details", value=False)
