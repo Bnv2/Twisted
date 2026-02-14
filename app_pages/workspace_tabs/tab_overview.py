@@ -20,10 +20,10 @@ def render_overview_tab(eid, event_core, df_events, db, get_data, is_adm):
     with col_h:
         st.subheader(f"📍 {event_core['Venue']} Dashboard")
     with col_edit:
+        # Toggle starts LOCKED (False)
         edit_mode = st.toggle("🔓 Edit Mode", value=False) if is_adm else False
 
     # --- 3. THE SPLIT DASHBOARD ---
-    # We use a slightly different ratio to give the map more breathing room
     col_form, col_map = st.columns([1.6, 1.4], gap="medium")
 
     # --- LEFT COLUMN: CORE DATA ---
@@ -56,20 +56,18 @@ def render_overview_tab(eid, event_core, df_events, db, get_data, is_adm):
                     if db.update_row("Events", {"Event_ID": eid}, updated_data):
                         st.success("Saved!"); st.cache_data.clear(); st.rerun()
 
-    # --- RIGHT COLUMN: MAP (MAX HEIGHT) & CONTACTS (ANCHORED) ---
+    # --- RIGHT COLUMN: MAP & CONTACTS ---
     with col_map:
-        # We wrap the map in a fixed-height container or just let it expand
-        # Using a container with border to match the left side
         with st.container(border=True):
             st.caption("🗺️ Interactive Site Map")
-            # Ensure your render_mini_map function can handle a height parameter if possible
-            render_mini_map(event_core.get('Address', ''), height=400) 
             
-            st.markdown("<div style='margin-top: 18px;'></div>", unsafe_allow_html=True)
+            # FIXED: Removed 'height=400' to resolve TypeError
+            render_mini_map(event_core.get('Address', '')) 
             
-            # This popover is now visually "anchored" to the bottom of the right frame
+            # Spacer to push the button down for alignment
+            st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
+            
             with st.popover("👥 Manage Event Contacts", use_container_width=True):
-                # Contact management logic remains same
                 with st.form("quick_add_contact"):
                     st.write("**Quick Add Contact**")
                     c_name = st.text_input("Name")
