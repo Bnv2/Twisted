@@ -1,16 +1,23 @@
+### new script 1 ### 
+
 import streamlit as st
 import pandas as pd
+import numpy as np
 from modules.ui_utils import render_mini_map
 
 def render_overview_tab(eid, event_core, df_events, db, get_data, is_adm):
     # --- 1. SETUP & DATA PARSING ---
-    is_multi_db = str(event_core.get('Is_Multi_Day', 'No')) == "Yes"
+    # Convert 'Yes'/'No' to boolean for the checkbox
+    is_multi_db = str(event_core.get('is_multi_day', 'No')).strip().lower() == "yes"
     
     try:
-        # Standardize dates for the UI widgets - handles ISO and AU formats
-        start_dt = pd.to_datetime(event_core['Date'], dayfirst=True).date()
-        end_val = event_core.get('End_Date')
-        end_dt = pd.to_datetime(end_val, dayfirst=True).date() if pd.notna(end_val) else start_dt
+        # Ensure we handle multiple date formats safely
+        start_dt = pd.to_datetime(event_core.get('date'), dayfirst=True, errors='coerce').date()
+        end_val = event_core.get('end_date')
+        if pd.isna(end_val) or end_val == "":
+            end_dt = start_dt
+        else:
+            end_dt = pd.to_datetime(end_val, dayfirst=True, errors='coerce').date()
     except:
         from datetime import datetime
         start_dt = end_dt = datetime.now().date()
@@ -18,83 +25,66 @@ def render_overview_tab(eid, event_core, df_events, db, get_data, is_adm):
     # --- 2. HEADER & CONTROL ROW ---
     col_h, col_edit = st.columns([3, 1])
     with col_h:
-        st.subheader(f"📍 {event_core['Venue']} Dashboard")
+        st.subheader(f"📍 {event_core.get('venue', 'Unknown Venue')} Dashboard")
     with col_edit:
-        # Defaults to False (Read-Only)
         edit_mode = st.toggle("🔓 Edit Mode", value=False) if is_adm else False
 
-    # --- 3. THE SPLIT DASHBOARD LAYOUT ---
+    # --- 3. THE DASHBOARD LAYOUT ---
     col_form, col_map = st.columns([1.6, 1.4], gap="medium")
 
-    # --- LEFT COLUMN: CORE DATA ---
     with col_form:
         with st.container(border=True):
-            if edit_mode:
-                is_multi = st.checkbox("Multi-Day Event", value=is_multi_db)
-            else:
-                is_multi = is_multi_db
+            # Checkbox logic
+            is_multi = st.checkbox("Multi-Day Event", value=is_multi_db, disabled=not edit_mode)
+            if not edit_mode:
                 st.caption("📅 Multi-Day Event" if is_multi else "⏱️ Single Day Event")
 
             with st.form("overview_form_master", border=False):
-                # Row 1: Dates (Side-by-Side)
                 d1, d2 = st.columns(2)
                 new_start = d1.date_input("Start Date", value=start_dt, disabled=not edit_mode)
                 new_end = d2.date_input("End Date", value=end_dt, disabled=not (edit_mode and is_multi))
 
-                # Row 2: Basic Info
                 v1, v2 = st.columns(2)
-                new_venue = v1.text_input("Venue Name", value=event_core['Venue'], disabled=not edit_mode)
-                new_org = v2.text_input("Organiser", value=str(event_core.get('Organiser_Name', '')), disabled=not edit_mode)
+                new_venue = v1.text_input("Venue Name", value=str(event_core.get('venue', '')), disabled=not edit_mode)
+                new_org = v2.text_input("Organiser", value=str(event_core.get('organiser_name', '')), disabled=not edit_mode)
 
-                # Row 3: Address & Notes
-                new_address = st.text_area("Address", value=str(event_core.get('Address', '')), disabled=not edit_mode, height=100)
-                new_notes = st.text_area("Internal Notes", value=str(event_core.get('Notes', '')), disabled=not edit_mode, height=115)
+                new_address = st.text_area("Address", value=str(event_core.get('address', '')), disabled=not edit_mode, height=100)
+                new_notes = st.text_area("Internal Notes", value=str(event_core.get('notes', '')), disabled=not edit_mode, height=115)
 
-                # --- FAIL-SAFE SAVE LOGIC ---
                 if st.form_submit_button("💾 Save Changes", use_container_width=True, disabled=not edit_mode):
-                    with st.spinner("Synchronizing with Database..."):
-                        # 1. Prepare updated values (ISO Dates for Database)
-                        updated_vals = {
-                            "Venue": new_venue, 
-                            "Date": new_start.strftime('%Y-%m-%d'), 
-                            "End_Date": new_end.strftime('%Y-%m-%d'), 
-                            "Is_Multi_Day": "Yes" if is_multi else "No", 
-                            "Address": new_address, 
-                            "Organiser_Name": new_org, 
-                            "Notes": new_notes
+                    with st.spinner("Updating Database..."):
+                        # Prepare exactly ONE row for Supabase
+                        # Keys MUST be lowercase to match your SQL schema
+                        updated_row = {
+                            "event_id": str(eid),
+                            "venue": new_venue, 
+                            "date": new_start.strftime('%Y-%m-%d'), 
+                            "end_date": new_end.strftime('%Y-%m-%d'), 
+                            "is_multi_day": "Yes" if is_multi else "No", 
+                            "address": new_address, 
+                            "organiser_name": new_org, 
+                            "notes": new_notes
                         }
                         
-                        # 2. Local Update on the current Dataframe
-                        df_master = df_events.copy()
-                        mask = df_master['Event_ID'].astype(str).str.strip() == str(eid).strip()
-                        
-                        if mask.any():
-                            idx = df_master.index[mask][0]
-                            for key, val in updated_vals.items():
-                                df_master.at[idx, key] = val
+                        # --- THE FIX: Direct Single-Row Upsert ---
+                        try:
+                            # We bypass your 'update_table' function and use the client directly 
+                            # to ensure we aren't sending any 'NaN' from a dataframe.
+                            db.client.table("events").upsert(updated_row, on_conflict="event_id").execute()
                             
-                            # 3. Push to Supabase
-                            if db.update_table("Events", df_master):
-                                # 4. CACHE BUSTING: Force a total refresh
-                                st.cache_data.clear()
-                                get_data("Events") # Pre-fetch fresh data
-                                
-                                st.success("Database Updated Successfully!")
-                                st.rerun()
-                        else:
-                            st.error(f"Event ID {eid} not found in the local list.")
+                            st.cache_data.clear()
+                            st.success("Database Updated Successfully!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Update Failed: {str(e)}")
 
-    # --- RIGHT COLUMN: MAP & CONTACTS ---
     with col_map:
         with st.container(border=True):
             st.caption("🗺️ Interactive Site Map")
-            # Map rendering
-            render_mini_map(event_core.get('Address', '')) 
+            render_mini_map(str(event_core.get('address', ''))) 
             
-            # Visual spacing for alignment
             st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
             
-            # Contact Popover
             with st.popover("👥 Manage Event Contacts", use_container_width=True):
                 with st.form("quick_add_contact"):
                     st.write("**Add New Contact**")
@@ -102,17 +92,20 @@ def render_overview_tab(eid, event_core, df_events, db, get_data, is_adm):
                     c_role = st.selectbox("Role", ["Manager", "Organizer", "Staff", "Other"])
                     if st.form_submit_button("Save Contact", use_container_width=True):
                         if c_name:
-                            new_c = {"Event_ID": eid, "Name": c_name, "Role": c_role}
-                            if db.insert_row("Event_Contacts", new_c):
-                                st.cache_data.clear()
-                                st.rerun()
+                            new_c = {"event_id": str(eid), "name": c_name, "role": c_role}
+                            db.client.table("event_contacts").insert(new_c).execute()
+                            st.cache_data.clear()
+                            st.rerun()
                 
                 st.divider()
-                # List current contacts
-                df_con = get_data("Event_Contacts")
-                current_contacts = df_con[df_con['Event_ID'].astype(str) == str(eid)] if not df_con.empty else pd.DataFrame()
-                for _, row in current_contacts.iterrows():
-                    st.caption(f"**{row['Role']}**: {row['Name']}")
+                # Use lowercase 'event_id' for filtering
+                df_con = get_data("event_contacts")
+                if not df_con.empty:
+                    current_contacts = df_con[df_con['event_id'].astype(str) == str(eid)]
+                    for _, row in current_contacts.iterrows():
+                        st.caption(f"**{row.get('role', 'Staff')}**: {row.get('name', 'Unknown')}")
+
+### end new script 1 ###
 
 
 
