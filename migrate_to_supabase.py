@@ -1,4 +1,60 @@
-### new script 2 ####
+### new script 3 ###
+import streamlit as st
+from streamlit_gsheets import GSheetsConnection
+from modules.supabase_db import get_supabase
+import pandas as pd
+import numpy as np
+import time
+
+def migrate_ui():
+    st.title("🚀 Final Cleanup Migration")
+    
+    if st.button("Run Final Cleanup"):
+        db = get_supabase()
+        gsheets = st.connection("gsheets", type=GSheetsConnection)
+        
+        # TARGETED CONFIG for the remaining errors
+        sheets_config = {
+            "Event_Contacts": "contact_id", # Reverted to contact_id as per your error log
+            "Event_Sales": "id"             # Standard ID
+        }
+
+        log_area = st.container(border=True)
+
+        for sheet_name, unique_key in sheets_config.items():
+            try:
+                df = gsheets.read(worksheet=sheet_name, ttl=0)
+                if df is None or df.empty:
+                    continue
+                
+                df_cleaned = df.replace({np.nan: None, pd.NA: None, pd.NaT: None})
+                df_cleaned.columns = [c.lower().strip() for c in df_cleaned.columns]
+                
+                # Special fix for Event_Sales if the column is actually 'cash_sales' or similar
+                # You can manually rename columns here if needed:
+                # if sheet_name == "Event_Sales" and "cash" not in df_cleaned.columns:
+                #     st.warning("Column 'cash' not found in Sheet. Available: " + str(list(df_cleaned.columns)))
+
+                data_dict = df_cleaned.to_dict(orient='records')
+                
+                # Use UPSERT to overwrite duplicates
+                db.client.table(sheet_name.lower()).upsert(data_dict, on_conflict=unique_key).execute()
+                
+                log_area.success(f"✅ {sheet_name}: Migrated {len(df_cleaned)} rows.")
+
+            except Exception as e:
+                log_area.error(f"❌ {sheet_name}: {str(e)}")
+        
+        st.info("💡 If Event_Sales still fails with 'schema cache', go to Supabase Settings -> API -> Reload PostgREST Config.")
+
+if __name__ == "__main__":
+    migrate_ui()
+
+### end new script 3 ###
+
+
+
+### new script 2 #### 7/9 tables worked 
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 from modules.supabase_db import get_supabase
