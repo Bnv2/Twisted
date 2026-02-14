@@ -7,10 +7,12 @@ def render_overview_tab(eid, event_core, df_events, db, get_data, is_adm):
     # --- 1. SETUP & DATA PARSING ---
     is_multi_db = str(event_core.get('Is_Multi_Day', 'No')) == "Yes"
     
+    # We parse the dates once for the UI widgets
     try:
-        start_dt = pd.to_datetime(event_core['Date'], dayfirst=True).date()
+        # Note: We use errors='coerce' to handle any weird data in the DB
+        start_dt = pd.to_datetime(event_core['Date']).date()
         end_val = event_core.get('End_Date')
-        end_dt = pd.to_datetime(end_val, dayfirst=True).date() if pd.notna(end_val) else start_dt
+        end_dt = pd.to_datetime(end_val).date() if pd.notna(end_val) else start_dt
     except:
         from datetime import datetime
         start_dt = end_dt = datetime.now().date()
@@ -20,16 +22,16 @@ def render_overview_tab(eid, event_core, df_events, db, get_data, is_adm):
     with col_h:
         st.subheader(f"📍 {event_core['Venue']} Dashboard")
     with col_edit:
-        # Defaults to False so UI is read-only on load
+        # Locked by default (False)
         edit_mode = st.toggle("🔓 Edit Mode", value=False) if is_adm else False
 
-    # --- 3. THE SPLIT DASHBOARD LAYOUT ---
+    # --- 3. THE SPLIT DASHBOARD ---
     col_form, col_map = st.columns([1.6, 1.4], gap="medium")
 
     # --- LEFT COLUMN: CORE DATA ---
     with col_form:
         with st.container(border=True):
-            # Checkbox outside form to trigger reactive enabling of End Date
+            # Checkbox outside form for reactivity
             if edit_mode:
                 is_multi = st.checkbox("Multi-Day Event", value=is_multi_db)
             else:
@@ -37,69 +39,84 @@ def render_overview_tab(eid, event_core, df_events, db, get_data, is_adm):
                 st.caption("📅 Multi-Day Event" if is_multi else "⏱️ Single Day Event")
 
             with st.form("overview_form_master", border=False):
-                # Row 1: Date Range
+                # Row 1: Dates (Side-by-Side)
                 d1, d2 = st.columns(2)
                 new_start = d1.date_input("Start Date", value=start_dt, disabled=not edit_mode)
                 new_end = d2.date_input("End Date", value=end_dt, disabled=not (edit_mode and is_multi))
 
-                # Row 2: Basic Info
+                # Row 2: Venue & Organiser
                 v1, v2 = st.columns(2)
                 new_venue = v1.text_input("Venue Name", value=event_core['Venue'], disabled=not edit_mode)
                 new_org = v2.text_input("Organiser", value=str(event_core.get('Organiser_Name', '')), disabled=not edit_mode)
 
-                # Row 3: Extended Info
+                # Row 3: Address & Notes
                 new_address = st.text_area("Address", value=str(event_core.get('Address', '')), disabled=not edit_mode, height=100)
                 new_notes = st.text_area("Internal Notes", value=str(event_core.get('Notes', '')), disabled=not edit_mode, height=115)
 
-                # Row 4: Action
+                # --- SAVE LOGIC ---
                 if st.form_submit_button("💾 Save Changes", use_container_width=True, disabled=not edit_mode):
-                    # Construct the updated row (Keep original ID!)
-                    updated_row = event_core.to_dict() # Start with all original columns
+                    # Use a dictionary that matches your Supabase column names
+                    updated_row = event_core.to_dict() 
                     updated_row.update({
                         "Venue": new_venue, 
-                        "Date": new_start.strftime('%d/%m/%Y'), 
-                        "End_Date": new_end.strftime('%d/%m/%Y'), 
+                        # CRITICAL FIX: Database needs YYYY-MM-DD
+                        "Date": new_start.strftime('%Y-%m-%d'), 
+                        "End_Date": new_end.strftime('%Y-%m-%d'), 
                         "Is_Multi_Day": "Yes" if is_multi else "No", 
                         "Address": new_address, 
                         "Organiser_Name": new_org, 
                         "Notes": new_notes
                     })
                     
-                    # Merge with Master Dataframe
+                    # Merge with the full list of events
                     df_updated = df_events[df_events['Event_ID'].astype(str) != str(eid)].copy()
                     df_updated = pd.concat([df_updated, pd.DataFrame([updated_row])], ignore_index=True)
                     
-                    if db.update_table("Events", df_updated):
-                        st.success("Changes Saved Successfully!")
-                        st.cache_data.clear()
-                        st.rerun()
+                    try:
+                        if db.update_table("Events", df_updated):
+                            st.success("Changes Saved Successfully!")
+                            st.cache_data.clear()
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f"Save failed: {e}")
 
     # --- RIGHT COLUMN: MAP & CONTACTS ---
     with col_map:
         with st.container(border=True):
             st.caption("🗺️ Interactive Site Map")
-            # Calling your utility (ensure height= is supported in ui_utils.py)
+            
+            # Map fills the top half
             render_mini_map(event_core.get('Address', '')) 
             
-            st.markdown("<div style='margin-top: 22px;'></div>", unsafe_allow_html=True)
+            # Spacer to push the button down for visual alignment
+            st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
             
+            # Contact Management Popover
             with st.popover("👥 Manage Event Contacts", use_container_width=True):
                 with st.form("quick_add_contact"):
-                    st.write("**Quick Add Contact**")
+                    st.write("**Add New Contact**")
                     c_name = st.text_input("Name")
-                    c_role = st.selectbox("Role", ["Manager", "Organizer", "Billing", "Staff"])
+                    c_role = st.selectbox("Role", ["Manager", "Organizer", "Billing", "Staff", "Other"])
+                    c_phone = st.text_input("Phone")
+                    
                     if st.form_submit_button("Save Contact", use_container_width=True):
                         if c_name:
-                            new_c = {"Event_ID": eid, "Name": c_name, "Role": c_role}
+                            new_c = {"Event_ID": eid, "Name": c_name, "Role": c_role, "Phone": c_phone}
                             if db.insert_row("Event_Contacts", new_c):
-                                st.cache_data.clear(); st.rerun()
+                                st.cache_data.clear()
+                                st.rerun()
                 
                 st.divider()
-                # Display mini-list of contacts
+                st.write("**Registered Contacts**")
                 df_con = get_data("Event_Contacts")
                 current_contacts = df_con[df_con['Event_ID'].astype(str) == str(eid)] if not df_con.empty else pd.DataFrame()
-                for _, row in current_contacts.iterrows():
-                    st.caption(f"**{row['Role']}**: {row['Name']}")
+                
+                for idx, row in current_contacts.iterrows():
+                    c_col1, c_col2 = st.columns([3, 1])
+                    c_col1.caption(f"**{row['Role']}**: {row['Name']}")
+                    if c_col2.button("🗑️", key=f"del_{idx}"):
+                        if db.delete_row("Event_Contacts", {"id": row['id']}):
+                            st.cache_data.clear(); st.rerun()
 
 
 
