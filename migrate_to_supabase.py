@@ -1,3 +1,4 @@
+### new script 2 ####
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 from modules.supabase_db import get_supabase
@@ -7,68 +8,146 @@ import time
 
 def migrate_ui():
     st.title("🚀 Supabase Migration Tool")
-    st.info("This tool will pull data from Google Sheets and UPSERT it into Supabase.")
+    
+    # ADDED: Button to refresh Supabase cache if columns aren't being found
+    st.sidebar.warning("If 'Column Not Found' errors persist, go to Supabase -> Settings -> API -> 'Refresh PostgREST Cache'")
 
     if st.button("Start Full Migration"):
         db = get_supabase()
         gsheets = st.connection("gsheets", type=GSheetsConnection)
         
+        # REVISED CONFIG: Based on your error logs
+        # If a table has no UNIQUE constraint, we set the key to None
         sheets_config = {
             "Staff": "email",
             "Events": "event_id",
             "Event_Financials": "id",
-            "Event_Contacts": "contact_id",
-            "Logistics_Details": "event_id",
-            "Event_Reports": "report_id",
+            "Event_Contacts": "id",          # Changed from contact_id
+            "Logistics_Details": None,       # Removed unique constraint requirement
+            "Event_Reports": "id",           # Changed from report_id
             "Event_Sales": "id",
             "Event_Staffing": "id",
-            "Staff_Database": "email"
+            "Staff_Database": "id"           # Changed from email
         }
 
         progress_bar = st.progress(0)
-        status_text = st.empty()
         log_area = st.container(border=True)
 
         for i, (sheet_name, unique_key) in enumerate(sheets_config.items()):
             try:
-                status_text.text(f"Processing {sheet_name}...")
-                
                 # 1. Read
                 df = gsheets.read(worksheet=sheet_name, ttl=0)
+                if df is None or df.empty:
+                    log_area.warning(f"⚠️ {sheet_name}: Empty")
+                    continue
                 
-                if df is not None and not df.empty:
-                    # 2. Clean
-                    df_cleaned = df.replace({np.nan: None, pd.NA: None, pd.NaT: None})
-                    df_cleaned.columns = [c.lower().strip() for c in df_cleaned.columns]
-                    
-                    # 3. Fix Dates
-                    for col in df_cleaned.columns:
-                        if 'date' in col or 'created_at' in col:
-                            df_cleaned[col] = pd.to_datetime(df_cleaned[col], dayfirst=True, errors='coerce').dt.strftime('%Y-%m-%d')
-                            df_cleaned[col] = df_cleaned[col].replace({'NaT': None, np.nan: None})
+                # 2. Clean & Lowercase
+                df_cleaned = df.replace({np.nan: None, pd.NA: None, pd.NaT: None})
+                df_cleaned.columns = [c.lower().strip() for c in df_cleaned.columns]
+                
+                # 3. Date Fix
+                for col in df_cleaned.columns:
+                    if 'date' in col or 'created_at' in col:
+                        df_cleaned[col] = pd.to_datetime(df_cleaned[col], dayfirst=True, errors='coerce').dt.strftime('%Y-%m-%d')
+                        df_cleaned[col] = df_cleaned[col].replace({'NaT': None, np.nan: None})
 
-                    # 4. Push
-                    data_dict = df_cleaned.to_dict(orient='records')
-                    db.client.table(sheet_name.lower()).upsert(data_dict, on_conflict=unique_key.lower()).execute()
-                    
-                    log_area.success(f"✅ {sheet_name}: Migrated {len(df_cleaned)} rows.")
+                # 4. Push to Supabase
+                data_dict = df_cleaned.to_dict(orient='records')
+                table = db.client.table(sheet_name.lower())
+                
+                if unique_key:
+                    # Use upsert if we have a unique key
+                    table.upsert(data_dict, on_conflict=unique_key).execute()
                 else:
-                    log_area.warning(f"⚠️ {sheet_name}: Sheet is empty.")
-
-                # Update Progress
+                    # Use normal insert if no unique constraint exists
+                    table.insert(data_dict).execute()
+                
+                log_area.success(f"✅ {sheet_name}: Migrated {len(df_cleaned)} rows.")
                 progress_bar.progress((i + 1) / len(sheets_config))
-                time.sleep(1) # Breath for the API
+                time.sleep(1)
 
             except Exception as e:
                 log_area.error(f"❌ {sheet_name}: {str(e)}")
 
         st.balloons()
-        st.success("Migration Process Finished!")
 
 if __name__ == "__main__":
     migrate_ui()
 
+### end new script 2 ####
 
+# ### new script 1 ### - worked for 50%
+
+# import streamlit as st
+# from streamlit_gsheets import GSheetsConnection
+# from modules.supabase_db import get_supabase
+# import pandas as pd
+# import numpy as np
+# import time
+
+# def migrate_ui():
+#     st.title("🚀 Supabase Migration Tool")
+#     st.info("This tool will pull data from Google Sheets and UPSERT it into Supabase.")
+
+#     if st.button("Start Full Migration"):
+#         db = get_supabase()
+#         gsheets = st.connection("gsheets", type=GSheetsConnection)
+        
+#         sheets_config = {
+#             "Staff": "email",
+#             "Events": "event_id",
+#             "Event_Financials": "id",
+#             "Event_Contacts": "contact_id",
+#             "Logistics_Details": "event_id",
+#             "Event_Reports": "report_id",
+#             "Event_Sales": "id",
+#             "Event_Staffing": "id",
+#             "Staff_Database": "email"
+#         }
+
+#         progress_bar = st.progress(0)
+#         status_text = st.empty()
+#         log_area = st.container(border=True)
+
+#         for i, (sheet_name, unique_key) in enumerate(sheets_config.items()):
+#             try:
+#                 status_text.text(f"Processing {sheet_name}...")
+                
+#                 # 1. Read
+#                 df = gsheets.read(worksheet=sheet_name, ttl=0)
+                
+#                 if df is not None and not df.empty:
+#                     # 2. Clean
+#                     df_cleaned = df.replace({np.nan: None, pd.NA: None, pd.NaT: None})
+#                     df_cleaned.columns = [c.lower().strip() for c in df_cleaned.columns]
+                    
+#                     # 3. Fix Dates
+#                     for col in df_cleaned.columns:
+#                         if 'date' in col or 'created_at' in col:
+#                             df_cleaned[col] = pd.to_datetime(df_cleaned[col], dayfirst=True, errors='coerce').dt.strftime('%Y-%m-%d')
+#                             df_cleaned[col] = df_cleaned[col].replace({'NaT': None, np.nan: None})
+
+#                     # 4. Push
+#                     data_dict = df_cleaned.to_dict(orient='records')
+#                     db.client.table(sheet_name.lower()).upsert(data_dict, on_conflict=unique_key.lower()).execute()
+                    
+#                     log_area.success(f"✅ {sheet_name}: Migrated {len(df_cleaned)} rows.")
+#                 else:
+#                     log_area.warning(f"⚠️ {sheet_name}: Sheet is empty.")
+
+#                 # Update Progress
+#                 progress_bar.progress((i + 1) / len(sheets_config))
+#                 time.sleep(1) # Breath for the API
+
+#             except Exception as e:
+#                 log_area.error(f"❌ {sheet_name}: {str(e)}")
+
+#         st.balloons()
+#         st.success("Migration Process Finished!")
+
+# if __name__ == "__main__":
+#     migrate_ui()
+#### end new script 1 ####
 
 
 
