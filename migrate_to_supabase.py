@@ -2,94 +2,61 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 from modules.supabase_db import get_supabase
 import pandas as pd
-from pathlib import Path
-from datetime import datetime
 import numpy as np
+import time
 
 def migrate_all_data():
-    """One-time migration from Google Sheets to Supabase with Data Cleaning"""
-    
-    print("🚀 Starting robust migration to Supabase...")
-    print(f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-    
-    # Connect to both
+    db = get_supabase()
     gsheets = st.connection("gsheets", type=GSheetsConnection)
-    db = get_supabase() # Assuming this returns your wrapper with the .client
     
-    # Table names - adjusted to lowercase to match standard SQL schema
-    sheets = [
-        "Staff",
-        "Events",
-        "Event_Financials",
-        "Event_Contacts",
-        "Logistics_Details",
-        "Event_Reports",
-        "Inventory",
-        "Event_Sales",
-        "Event_Staffing",
-        "Staff_Database"
-    ]
+    # Mapping sheet names to their Unique ID columns for conflict handling
+    sheets_config = {
+        "Staff": "email",
+        "Events": "event_id",
+        "Event_Financials": "id",
+        "Event_Contacts": "contact_id",
+        "Logistics_Details": "event_id",
+        "Event_Reports": "report_id",
+        "Event_Sales": "id",
+        "Event_Staffing": "id",
+        "Staff_Database": "email"
+    }
     
-    backup_dir = Path("data/backups")
-    backup_dir.mkdir(parents=True, exist_ok=True)
-    
-    successful = 0
-    failed = 0
-    
-    for sheet_name in sheets:
+    for sheet_name, unique_key in sheets_config.items():
         try:
             print(f"📥 Processing {sheet_name}...")
-            
-            # 1. Read from Google Sheets
             df = gsheets.read(worksheet=sheet_name, ttl=0)
             
             if df is None or df.empty:
-                print(f"  ⚠️  {sheet_name} is empty or not found, skipping...\n")
                 continue
-            
-            # 2. CLEANING: Replace NaN/NAT with None (JSON compliant)
-            # This fixes the "Out of range float values" error
+
+            # Clean Data
             df_cleaned = df.replace({np.nan: None, pd.NA: None, pd.NaT: None})
-            
-            # 3. STANDARDIZE: Lowercase columns to match Supabase schema
-            # This fixes the "Could not find column 'Cash'" error
             df_cleaned.columns = [c.lower().strip() for c in df_cleaned.columns]
             
-            # 4. DATES: Ensure Date columns are in YYYY-MM-DD string format
-            date_cols = ['date', 'end_date', 'created_at', 'updated_at']
-            for col in date_cols:
-                if col in df_cleaned.columns:
-                    df_cleaned[col] = pd.to_datetime(df_cleaned[col], errors='coerce').dt.strftime('%Y-%m-%d')
-                    # Replace any failed parses (NaN) back to None
-                    df_cleaned[col] = df_cleaned[col].replace({np.nan: None})
+            # AGGRESSIVE DATE FIX
+            for col in df_cleaned.columns:
+                if 'date' in col or 'created_at' in col:
+                    # Convert DD/MM/YYYY to YYYY-MM-DD
+                    df_cleaned[col] = pd.to_datetime(df_cleaned[col], dayfirst=True, errors='coerce').dt.strftime('%Y-%m-%d')
+                    df_cleaned[col] = df_cleaned[col].replace({'NaT': None, np.nan: None})
 
-            # 5. BACKUP
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            csv_path = backup_dir / f"{sheet_name}_{timestamp}.csv"
-            df_cleaned.to_csv(csv_path, index=False)
-            
-            # 6. UPSERT TO SUPABASE
-            # Use .upsert() so it updates existing and adds missing without deleting the table
             data_dict = df_cleaned.to_dict(orient='records')
             
-            # Target table name in lowercase
-            target_table = sheet_name.lower()
+            # UPSERT with on_conflict
+            # This fixes the "Duplicate Key" error by updating the existing row
+            res = db.client.table(sheet_name.lower()).upsert(
+                data_dict, 
+                on_conflict=unique_key.lower()
+            ).execute()
             
-            res = db.client.table(target_table).upsert(data_dict).execute()
+            print(f"  ✅ Migrated {len(df_cleaned)} rows.")
             
-            print(f"  ✅ Migrated {len(df_cleaned)} rows to {target_table}")
-            successful += 1
-            print() 
+            # Fix for Quota Exceeded: Wait 2 seconds between sheets
+            time.sleep(2)
 
         except Exception as e:
-            print(f"  ❌ Error with {sheet_name}: {e}\n")
-            failed += 1
-    
-    print("=" * 50)
-    print(f"🎉 Migration Complete!")
-    print(f"✅ Successful: {successful}/{len(sheets)}")
-    print(f"❌ Failed: {failed}/{len(sheets)}")
-    print("=" * 50)
+            print(f"  ❌ Error: {e}")
 
 if __name__ == "__main__":
     migrate_all_data()
