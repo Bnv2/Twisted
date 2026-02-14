@@ -5,92 +5,114 @@ from modules.ui_utils import render_mini_map
 
 def render_overview_tab(eid, event_core, df_events, db, get_data, is_adm):
     # --- 1. SETUP ---
-    is_multi_initial = str(event_core.get('Is_Multi_Day', 'No')) == "Yes"
+    is_multi_db = str(event_core.get('Is_Multi_Day', 'No')) == "Yes"
     
     try:
-        start_dt = pd.to_datetime(event_core['Date'], dayfirst=True)
+        start_dt = pd.to_datetime(event_core['Date'], dayfirst=True).date()
         end_val = event_core.get('End_Date')
-        end_dt = pd.to_datetime(end_val, dayfirst=True) if pd.notna(end_val) else start_dt
+        end_dt = pd.to_datetime(end_val, dayfirst=True).date() if pd.notna(end_val) else start_dt
     except:
         from datetime import datetime
-        start_dt = end_dt = datetime.now()
+        start_dt = end_dt = datetime.now().date()
 
     # --- 2. TOP ACTIONS (Add Contact & Edit Toggle) ---
     col_ov_h, col_ov_act = st.columns([2, 1])
-    
     with col_ov_h: 
         st.subheader("📍 Event Overview")
 
     with col_ov_act:
-        # Permission-based Edit Toggle (Default: False)
-        edit_mode = st.toggle("🔓 Edit Details", value=True) if is_adm else False
+        # Default is False (Locked)
+        edit_mode = st.toggle("🔓 Edit Mode", value=False) if is_adm else False
         
         with st.popover("➕ Add Contact", use_container_width=True):
             with st.form("add_contact_form", clear_on_submit=True):
                 c_name = st.text_input("Full Name*")
                 c_role = st.selectbox("Role", ["Site Manager", "Organizer", "Billing", "Electrician", "Security"])
-                c_phone = st.text_input("Phone Number*")
-                c_email = st.text_input("Email Address*")
-                
+                c_phone = st.text_input("Phone Number")
+                c_email = st.text_input("Email Address")
                 if st.form_submit_button("💾 Save Contact", use_container_width=True):
                     if c_name and "@" in c_email:
                         new_c = {"Event_ID": eid, "Name": c_name, "Phone": c_phone, "Email": c_email, "Role": c_role}
                         if db.insert_row("Event_Contacts", new_c):
                             st.cache_data.clear(); st.rerun()
-                    else:
-                        st.error("Name and valid Email required.")
 
-    # --- 3. CORE DETAILS FORM ---
-    # We keep the "Multi-Day" selectbox INSIDE the form to stop the constant reloading.
-    # To unlock the End Date, the user just hits 'Save' once if they change to Multi-Day.
-    with st.form("edit_core_details", border=True):
-        c1, c2 = st.columns(2)
-        with c1:
-            new_venue = st.text_input("Venue Name", value=event_core['Venue'], disabled=not edit_mode)
-            new_start = st.date_input("Start Date", value=start_dt.date(), disabled=not edit_mode)
-            
-            # Put this back in the form to stop the "type-and-reload" lag
-            new_multi = st.selectbox("Multi-Day Event?", ["Yes", "No"], 
-                                     index=0 if is_multi_initial else 1, 
-                                     disabled=not edit_mode)
-            
-            # End Date logic
-            new_end = st.date_input("End Date", 
-                                   value=end_dt.date(), 
-                                   disabled=not (edit_mode and new_multi == "Yes"))
-        with c2:
+    # --- 3. THE CORE FORM ---
+    # We use a container to wrap the form for better visual grouping
+    with st.container(border=True):
+        # We place the Multi-Day checkbox OUTSIDE the form only if Edit Mode is on 
+        # to allow the "End Date" to unlock without a full form save.
+        if edit_mode:
+            is_multi = st.checkbox("This is a Multi-Day Event", value=is_multi_db)
+        else:
+            is_multi = is_multi_db
+            st.info("💡 Toggle 'Edit Mode' above to modify event details.")
+
+        with st.form("edit_event_core"):
+            # Row 1: Dates (Side by Side)
+            d_col1, d_col2 = st.columns(2)
+            new_start = d_col1.date_input("Start Date", value=start_dt, disabled=not edit_mode)
+            new_end = d_col2.date_input("End Date", value=end_dt, disabled=not (edit_mode and is_multi))
+
+            # Row 2: Venue & Organiser
+            v_col1, v_col2 = st.columns(2)
+            new_venue = v_col1.text_input("Venue Name", value=event_core['Venue'], disabled=not edit_mode)
+            new_org = v_col2.text_input("Organiser", value=str(event_core.get('Organiser_Name', '')), disabled=not edit_mode)
+
+            # Row 3: Address (Full Width)
             new_address = st.text_area("Event Address", value=str(event_core.get('Address', '')), disabled=not edit_mode, height=68)
-            new_map = st.text_input("Maps Link", value=str(event_core.get('Maps_Link', '')), disabled=not edit_mode)
-            new_org = st.text_input("Organiser Name", value=str(event_core.get('Organiser_Name', '')), disabled=not edit_mode)
-        
-        new_notes = st.text_area("Internal Notes", value=str(event_core.get('Notes', '')), disabled=not edit_mode)
+            
+            # Row 4: Notes
+            new_notes = st.text_area("Internal Notes", value=str(event_core.get('Notes', '')), disabled=not edit_mode)
 
-        if st.form_submit_button("💾 Save Changes", use_container_width=True, disabled=not edit_mode):
-            updated_data = {
-                "Venue": new_venue, "Date": new_start.strftime('%d/%m/%Y'), 
-                "End_Date": new_end.strftime('%d/%m/%Y'), "Is_Multi_Day": new_multi, 
-                "Address": new_address, "Maps_Link": new_map, "Organiser_Name": new_org, "Notes": new_notes
-            }
-            if db.update_row("Events", {"Event_ID": eid}, updated_data):
-                st.success("Saved!")
-                st.cache_data.clear(); st.rerun()
+            # Submit Button
+            if st.form_submit_button("💾 Save Changes", use_container_width=True, disabled=not edit_mode):
+                updated_data = {
+                    "Venue": new_venue, 
+                    "Date": new_start.strftime('%d/%m/%Y'), 
+                    "End_Date": new_end.strftime('%d/%m/%Y'), 
+                    "Is_Multi_Day": "Yes" if is_multi else "No", 
+                    "Address": new_address, 
+                    "Organiser_Name": new_org, 
+                    "Notes": new_notes
+                }
+                if db.update_row("Events", {"Event_ID": eid}, updated_data):
+                    st.success("Changes Saved Successfully!")
+                    st.cache_data.clear()
+                    st.rerun()
 
-    # --- 4. CONTACT LIST (Compact View) ---
+    # --- 4. CONTACT LIST ---
     st.divider()
     df_con = get_data("Event_Contacts")
     current_contacts = df_con[df_con['Event_ID'].astype(str) == str(eid)] if not df_con.empty else pd.DataFrame()
     
     if not current_contacts.empty:
-        # Use columns for a cleaner contact list
-        for idx, row in current_contacts.iterrows():
-            with st.expander(f"👤 {row['Role']}: {row['Name']}"):
-                cl, cr = st.columns([3, 1])
-                cl.write(f"📞 {row['Phone']} | 📧 {row['Email']}")
-                if is_adm and cr.button("🗑️", key=f"del_{idx}"):
-                    if db.delete_row("Event_Contacts", {"id": row['id']}):
-                        st.cache_data.clear(); st.rerun()
+        st.caption("Registered Contacts")
+        # Displaying contacts in a more compact grid
+        c_cols = st.columns(2)
+        for i, (idx, row) in enumerate(current_contacts.iterrows()):
+            with c_cols[i % 2]:
+                with st.expander(f"{row['Role']}: {row['Name']}"):
+                    st.write(f"📞 {row['Phone']}")
+                    st.write(f"📧 {row['Email']}")
+                    if is_adm and st.button("🗑️ Remove", key=f"del_{idx}"):
+                        if db.delete_row("Event_Contacts", {"id": row['id']}):
+                            st.cache_data.clear(); st.rerun()
 
+    # --- 5. MAP ONLY ---
     render_mini_map(event_core.get('Address', ''))
+
+
+
+
+
+
+
+
+
+
+
+
+
 # import streamlit as st
 # import pandas as pd
 # import re
