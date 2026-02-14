@@ -20,15 +20,16 @@ def render_overview_tab(eid, event_core, df_events, db, get_data, is_adm):
     with col_h:
         st.subheader(f"📍 {event_core['Venue']} Dashboard")
     with col_edit:
-        # Toggle starts LOCKED (False)
+        # Defaults to False so UI is read-only on load
         edit_mode = st.toggle("🔓 Edit Mode", value=False) if is_adm else False
 
-    # --- 3. THE SPLIT DASHBOARD ---
+    # --- 3. THE SPLIT DASHBOARD LAYOUT ---
     col_form, col_map = st.columns([1.6, 1.4], gap="medium")
 
     # --- LEFT COLUMN: CORE DATA ---
     with col_form:
         with st.container(border=True):
+            # Checkbox outside form to trigger reactive enabling of End Date
             if edit_mode:
                 is_multi = st.checkbox("Multi-Day Event", value=is_multi_db)
             else:
@@ -36,28 +37,25 @@ def render_overview_tab(eid, event_core, df_events, db, get_data, is_adm):
                 st.caption("📅 Multi-Day Event" if is_multi else "⏱️ Single Day Event")
 
             with st.form("overview_form_master", border=False):
+                # Row 1: Date Range
                 d1, d2 = st.columns(2)
                 new_start = d1.date_input("Start Date", value=start_dt, disabled=not edit_mode)
                 new_end = d2.date_input("End Date", value=end_dt, disabled=not (edit_mode and is_multi))
 
+                # Row 2: Basic Info
                 v1, v2 = st.columns(2)
                 new_venue = v1.text_input("Venue Name", value=event_core['Venue'], disabled=not edit_mode)
                 new_org = v2.text_input("Organiser", value=str(event_core.get('Organiser_Name', '')), disabled=not edit_mode)
 
+                # Row 3: Extended Info
                 new_address = st.text_area("Address", value=str(event_core.get('Address', '')), disabled=not edit_mode, height=100)
                 new_notes = st.text_area("Internal Notes", value=str(event_core.get('Notes', '')), disabled=not edit_mode, height=115)
 
-                # if st.form_submit_button("💾 Save Changes", use_container_width=True, disabled=not edit_mode):
-                #     updated_data = {
-                #         "Venue": new_venue, "Date": new_start.strftime('%d/%m/%Y'), 
-                #         "End_Date": new_end.strftime('%d/%m/%Y'), "Is_Multi_Day": "Yes" if is_multi else "No", 
-                #         "Address": new_address, "Organiser_Name": new_org, "Notes": new_notes
-                #     }
-                #     if db.update_row("Events", {"Event_ID": eid}, updated_data):
-                #         st.success("Saved!"); st.cache_data.clear(); st.rerun()
+                # Row 4: Action
                 if st.form_submit_button("💾 Save Changes", use_container_width=True, disabled=not edit_mode):
-                    updated_row = {
-                        "Event_ID": eid, # Keep the ID
+                    # Construct the updated row (Keep original ID!)
+                    updated_row = event_core.to_dict() # Start with all original columns
+                    updated_row.update({
                         "Venue": new_venue, 
                         "Date": new_start.strftime('%d/%m/%Y'), 
                         "End_Date": new_end.strftime('%d/%m/%Y'), 
@@ -65,30 +63,25 @@ def render_overview_tab(eid, event_core, df_events, db, get_data, is_adm):
                         "Address": new_address, 
                         "Organiser_Name": new_org, 
                         "Notes": new_notes
-                        }
-                                
-                        # 1. Filter out the old record
-                        df_updated = df_events[df_events['Event_ID'].astype(str) != str(eid)].copy()
-                        
-                        # 2. Append the new record
-                        df_updated = pd.concat([df_updated, pd.DataFrame([updated_row])], ignore_index=True)
-                        
-                        # 3. Use the function that DOES exist in your db module
-                        if db.update_table("Events", df_updated):
-                            st.success("Changes Saved Successfully!")
-                            st.cache_data.clear()
-                            st.rerun()
+                    })
+                    
+                    # Merge with Master Dataframe
+                    df_updated = df_events[df_events['Event_ID'].astype(str) != str(eid)].copy()
+                    df_updated = pd.concat([df_updated, pd.DataFrame([updated_row])], ignore_index=True)
+                    
+                    if db.update_table("Events", df_updated):
+                        st.success("Changes Saved Successfully!")
+                        st.cache_data.clear()
+                        st.rerun()
 
     # --- RIGHT COLUMN: MAP & CONTACTS ---
     with col_map:
         with st.container(border=True):
             st.caption("🗺️ Interactive Site Map")
-            
-            # FIXED: Removed 'height=400' to resolve TypeError
+            # Calling your utility (ensure height= is supported in ui_utils.py)
             render_mini_map(event_core.get('Address', '')) 
             
-            # Spacer to push the button down for alignment
-            st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
+            st.markdown("<div style='margin-top: 22px;'></div>", unsafe_allow_html=True)
             
             with st.popover("👥 Manage Event Contacts", use_container_width=True):
                 with st.form("quick_add_contact"):
@@ -102,13 +95,11 @@ def render_overview_tab(eid, event_core, df_events, db, get_data, is_adm):
                                 st.cache_data.clear(); st.rerun()
                 
                 st.divider()
+                # Display mini-list of contacts
                 df_con = get_data("Event_Contacts")
                 current_contacts = df_con[df_con['Event_ID'].astype(str) == str(eid)] if not df_con.empty else pd.DataFrame()
                 for _, row in current_contacts.iterrows():
-                    st.caption(f"**{row['Role']}**: {row['Name']} ({row.get('Phone', 'No PH')})")
-
-
-
+                    st.caption(f"**{row['Role']}**: {row['Name']}")
 
 
 
