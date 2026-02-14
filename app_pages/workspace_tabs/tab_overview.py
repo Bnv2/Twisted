@@ -47,14 +47,37 @@ def render_overview_tab(eid, event_core, df_events, db, get_data, is_adm):
                 new_address = st.text_area("Address", value=str(event_core.get('Address', '')), disabled=not edit_mode, height=100)
                 new_notes = st.text_area("Internal Notes", value=str(event_core.get('Notes', '')), disabled=not edit_mode, height=115)
 
+                # if st.form_submit_button("💾 Save Changes", use_container_width=True, disabled=not edit_mode):
+                #     updated_data = {
+                #         "Venue": new_venue, "Date": new_start.strftime('%d/%m/%Y'), 
+                #         "End_Date": new_end.strftime('%d/%m/%Y'), "Is_Multi_Day": "Yes" if is_multi else "No", 
+                #         "Address": new_address, "Organiser_Name": new_org, "Notes": new_notes
+                #     }
+                #     if db.update_row("Events", {"Event_ID": eid}, updated_data):
+                #         st.success("Saved!"); st.cache_data.clear(); st.rerun()
                 if st.form_submit_button("💾 Save Changes", use_container_width=True, disabled=not edit_mode):
-                    updated_data = {
-                        "Venue": new_venue, "Date": new_start.strftime('%d/%m/%Y'), 
-                        "End_Date": new_end.strftime('%d/%m/%Y'), "Is_Multi_Day": "Yes" if is_multi else "No", 
-                        "Address": new_address, "Organiser_Name": new_org, "Notes": new_notes
-                    }
-                    if db.update_row("Events", {"Event_ID": eid}, updated_data):
-                        st.success("Saved!"); st.cache_data.clear(); st.rerun()
+                    updated_row = {
+                        "Event_ID": eid, # Keep the ID
+                        "Venue": new_venue, 
+                        "Date": new_start.strftime('%d/%m/%Y'), 
+                        "End_Date": new_end.strftime('%d/%m/%Y'), 
+                        "Is_Multi_Day": "Yes" if is_multi else "No", 
+                        "Address": new_address, 
+                        "Organiser_Name": new_org, 
+                        "Notes": new_notes
+                        }
+                                
+                        # 1. Filter out the old record
+                        df_updated = df_events[df_events['Event_ID'].astype(str) != str(eid)].copy()
+                        
+                        # 2. Append the new record
+                        df_updated = pd.concat([df_updated, pd.DataFrame([updated_row])], ignore_index=True)
+                        
+                        # 3. Use the function that DOES exist in your db module
+                        if db.update_table("Events", df_updated):
+                            st.success("Changes Saved Successfully!")
+                            st.cache_data.clear()
+                            st.rerun()
 
     # --- RIGHT COLUMN: MAP & CONTACTS ---
     with col_map:
