@@ -15,7 +15,8 @@ def show_event_workspace(eid, get_data, db):
     Handles data acquisition and tab routing.
     """
     # --- 🛡️ 1. DATA ACQUISITION ---
-    df_events = get_data("Events")
+    # df_events = get_data("Events")
+    df_events['Date'] = pd.to_datetime(df_events['Date'], errors='coerce')
     event_match = df_events[df_events['Event_ID'].astype(str) == str(eid)]
     
     if event_match.empty:
@@ -38,8 +39,6 @@ def show_event_workspace(eid, get_data, db):
     #     date_range = [datetime.now().date()]
     # --- 📅 2. DATE LOGIC (Updated for ISO Accuracy) ---
     try:
-        # Remove dayfirst=True to stop it from flipping Jan 2nd to Feb 1st
-        # Standardizing to ISO format (YYYY-MM-DD) which is what Supabase provides
         start_dt = pd.to_datetime(event_core['Date'], errors='coerce') 
         
         end_val = event_core.get('End_Date')
@@ -48,7 +47,6 @@ def show_event_workspace(eid, get_data, db):
         else:
             end_dt = pd.to_datetime(end_val, errors='coerce')
     
-        # Ensure we actually have valid dates before creating a range
         if pd.notna(start_dt) and pd.notna(end_dt):
             date_range = pd.date_range(start=start_dt, end=end_dt).date.tolist()
         else:
