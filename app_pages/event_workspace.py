@@ -15,8 +15,8 @@ def show_event_workspace(eid, get_data, db):
     Handles data acquisition and tab routing.
     """
     # --- 🛡️ 1. DATA ACQUISITION ---
-    # df_events = get_data("Events")
-    df_events['Date'] = pd.to_datetime(df_events['Date'], errors='coerce')
+    df_events = get_data("Events")
+    # df_events['Date'] = pd.to_datetime(df_events['Date'], errors='coerce')
     event_match = df_events[df_events['Event_ID'].astype(str) == str(eid)]
     
     if event_match.empty:
