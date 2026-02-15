@@ -1,3 +1,4 @@
+### new code 1.1 ### whole replaced due to date error 
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -19,41 +20,32 @@ def show_event_workspace(eid, get_data, db):
     event_match = df_events[df_events['Event_ID'].astype(str) == str(eid)]
     
     if event_match.empty:
-        st.error(f"Event ID {eid} not found."); return
+        st.error(f"Event ID {eid} not found.")
+        return
     
     event_core = event_match.iloc[0].copy()
     is_adm = st.session_state.get('user_role') == "Admin"
 
-    # # --- 📅 2. DATE LOGIC (Multi-Day Support) ---
-    # try:
-    #     start_dt = pd.to_datetime(event_core['Date'], dayfirst=True)
-    #     end_val = event_core.get('End_Date')
-    #     if pd.isna(end_val) or end_val == "" or str(end_val).lower() == "none":
-    #         end_dt = start_dt
-    #     else:
-    #         end_dt = pd.to_datetime(end_val, dayfirst=True)
-    #     date_range = pd.date_range(start=start_dt, end=end_dt).date.tolist()
-    # except Exception as e:
-    #     st.error(f"📅 Date Error: {e}")
-    #     date_range = [datetime.now().date()]
     # --- 📅 2. DATE LOGIC (Updated for ISO Accuracy) ---
     try:
-        start_dt = pd.to_datetime(event_core['Date'], errors='coerce') 
+        # Explicitly telling pandas to treat this as Year-Month-Day
+        start_dt = pd.to_datetime(event_core['Date'], errors='coerce', format='ISO8601') 
         
         end_val = event_core.get('End_Date')
         if pd.isna(end_val) or end_val == "" or str(end_val).lower() == "none":
             end_dt = start_dt
         else:
-            end_dt = pd.to_datetime(end_val, errors='coerce')
-    
+            end_dt = pd.to_datetime(end_val, errors='coerce', format='ISO8601')
+
         if pd.notna(start_dt) and pd.notna(end_dt):
             date_range = pd.date_range(start=start_dt, end=end_dt).date.tolist()
         else:
             date_range = [datetime.now().date()]
-        
-except Exception as e:
-    st.error(f"📅 Date Error: {e}")
-    date_range = [datetime.now().date()]
+            
+    except Exception as e:
+        # Indentation Fixed: This must be inside the function
+        st.error(f"📅 Date Error: {e}")
+        date_range = [datetime.now().date()]
 
     # --- 🏗️ UI HEADER ---
     h1, h2 = st.columns([3, 1])
@@ -71,7 +63,8 @@ except Exception as e:
             format_func=lambda x: x.strftime("%a, %d %b"), 
             default=date_range[0]
         )
-        if selection: selected_report_date = selection
+        if selection: 
+            selected_report_date = selection
 
     # --- 📑 TAB DEFINITION ---
     tab_ov, tab_log, tab_rep, tab_staff, tab_sales = st.tabs([
@@ -79,7 +72,6 @@ except Exception as e:
     ])
     
     # --- 🚀 MODULE ROUTING ---
-    
     with tab_ov:
         render_overview_tab(eid, event_core, df_events, db, get_data, is_adm)
 
@@ -94,6 +86,8 @@ except Exception as e:
 
     with tab_sales:
         render_sales_tab(eid, selected_report_date, db, get_data)
+
+### end new code 1.1 ### 
 
 # import streamlit as st
 # import pandas as pd
