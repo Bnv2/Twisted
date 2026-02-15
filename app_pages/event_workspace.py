@@ -24,18 +24,39 @@ def show_event_workspace(eid, get_data, db):
     event_core = event_match.iloc[0].copy()
     is_adm = st.session_state.get('user_role') == "Admin"
 
-    # --- 📅 2. DATE LOGIC (Multi-Day Support) ---
+    # # --- 📅 2. DATE LOGIC (Multi-Day Support) ---
+    # try:
+    #     start_dt = pd.to_datetime(event_core['Date'], dayfirst=True)
+    #     end_val = event_core.get('End_Date')
+    #     if pd.isna(end_val) or end_val == "" or str(end_val).lower() == "none":
+    #         end_dt = start_dt
+    #     else:
+    #         end_dt = pd.to_datetime(end_val, dayfirst=True)
+    #     date_range = pd.date_range(start=start_dt, end=end_dt).date.tolist()
+    # except Exception as e:
+    #     st.error(f"📅 Date Error: {e}")
+    #     date_range = [datetime.now().date()]
+    # --- 📅 2. DATE LOGIC (Updated for ISO Accuracy) ---
     try:
-        start_dt = pd.to_datetime(event_core['Date'], dayfirst=True)
+        # Remove dayfirst=True to stop it from flipping Jan 2nd to Feb 1st
+        # Standardizing to ISO format (YYYY-MM-DD) which is what Supabase provides
+        start_dt = pd.to_datetime(event_core['Date'], errors='coerce') 
+        
         end_val = event_core.get('End_Date')
         if pd.isna(end_val) or end_val == "" or str(end_val).lower() == "none":
             end_dt = start_dt
         else:
-            end_dt = pd.to_datetime(end_val, dayfirst=True)
-        date_range = pd.date_range(start=start_dt, end=end_dt).date.tolist()
-    except Exception as e:
-        st.error(f"📅 Date Error: {e}")
-        date_range = [datetime.now().date()]
+            end_dt = pd.to_datetime(end_val, errors='coerce')
+    
+        # Ensure we actually have valid dates before creating a range
+        if pd.notna(start_dt) and pd.notna(end_dt):
+            date_range = pd.date_range(start=start_dt, end=end_dt).date.tolist()
+        else:
+            date_range = [datetime.now().date()]
+        
+except Exception as e:
+    st.error(f"📅 Date Error: {e}")
+    date_range = [datetime.now().date()]
 
     # --- 🏗️ UI HEADER ---
     h1, h2 = st.columns([3, 1])
